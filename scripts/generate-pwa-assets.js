@@ -132,6 +132,27 @@ async function generatePwaAssets() {
   } catch (err) {
     console.error('Error generating mobile screenshot:', err);
   }
+
+  // 6. Ensure Typography Reference Library is synced to public and android assets
+  const sourceLib = path.join(process.cwd(), 'Elite_72_Library_Organized');
+  const targetPublicLib = path.join(process.cwd(), 'public', 'Elite_72_Library_Organized');
+  const targetAndroidLib = path.join(process.cwd(), 'android', 'app', 'src', 'main', 'assets', 'public', 'Elite_72_Library_Organized');
+
+  if (fs.existsSync(sourceLib)) {
+    try {
+      if (!fs.existsSync(targetPublicLib)) {
+        fs.cpSync(sourceLib, targetPublicLib, { recursive: true });
+        console.log('✓ Synced Elite_72_Library_Organized to public/');
+      }
+      const androidParent = path.dirname(targetAndroidLib);
+      if (fs.existsSync(androidParent) && !fs.existsSync(targetAndroidLib)) {
+        fs.cpSync(sourceLib, targetAndroidLib, { recursive: true });
+        console.log('✓ Synced Elite_72_Library_Organized to android assets');
+      }
+    } catch (copyErr) {
+      console.warn('Warning syncing library assets:', copyErr.message);
+    }
+  }
 }
 
 generatePwaAssets().catch((err) => {
