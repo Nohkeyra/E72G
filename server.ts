@@ -249,16 +249,44 @@ async function startServer() {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: "custom",
     });
     app.use(vite.middlewares);
     app.use(express.static(path.join(process.cwd(), 'public')));
+
+    // SPA fallback in development mode (parameterless middleware catches all unmatched routes)
+    app.use(async (req, res, next) => {
+      // Skip API and asset routes that weren't found
+      if (req.originalUrl.startsWith('/api/') || req.originalUrl.startsWith('/Elite_72_Library_Organized/')) {
+        return next();
+      }
+      try {
+        const indexPath = path.resolve(process.cwd(), 'index.html');
+        if (fs.existsSync(indexPath)) {
+          let template = fs.readFileSync(indexPath, 'utf-8');
+          template = await vite.transformIndexHtml(req.originalUrl, template);
+          res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+        } else {
+          next();
+        }
+      } catch (e) {
+        next(e);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.use(express.static(path.join(process.cwd(), 'public')));
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.use((req, res, next) => {
+      if (req.originalUrl.startsWith('/api/') || req.originalUrl.startsWith('/Elite_72_Library_Organized/')) {
+        return next();
+      }
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send('Application build in progress. Please refresh shortly.');
+      }
     });
   }
 
