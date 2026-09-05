@@ -1,0 +1,6 @@
+{
+  "name": "Elite 72 | Design Intelligence",
+  "description": "A professional-grade visual synthesis environment for high-end branding and typography, engineered for the modern creative director.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

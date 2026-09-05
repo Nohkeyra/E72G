@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Elite 72 | Design Intelligence</string>
+    <string name="title_activity_main">Elite 72 | Design Intelligence</string>
+    <string name="package_name">com.elite72.designintelligence</string>
+    <string name="custom_url_scheme">com.elite72.designintelligence</string>
+</resources>

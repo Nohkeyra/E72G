@@ -1,0 +1,39 @@
+# Node dependencies (98% of your project size)
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Build outputs
+dist/
+build/
+bin/
+obj/
+
+# Android specific bloat
+.gradle/
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Assets & Backups (Identified in Audit)
+*.bak
+*.txt.bak
+server.ts.txt
+test.png
+test3.png
+Elite_72_Library_Organized.zip
+
+# System files
+.DS_Store
+Thumbs.db

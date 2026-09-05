@@ -1,0 +1,137 @@
+export interface CropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface EliteReferenceImage {
+  id: string;
+  category: "Retro" | "Organic" | "Geometric" | "Street" | "Brutalist" | "Hybrid";
+  sourceImagePath?: string;
+  previewImagePath?: string;
+  referenceImagePath?: string;
+  cropBox?: CropBox;
+  tags?: string[];
+}
+
+export const referenceImageManifest: Record<string, EliteReferenceImage[]> = {
+  Retro: [
+    { id: "RT_C01", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_01_beer_mug_white_street.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_01_beer_mug_white_street.png", tags: ["beer mug", "white street", "sticker"] },
+    { id: "RT_C02", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_02_yellow_circular_wordmark.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_02_yellow_circular_wordmark.png", tags: ["yellow", "circular", "graphic"] },
+    { id: "RT_C03", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_03_red_apple_badge.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_03_red_apple_badge.png", tags: ["red apple", "badge", "sticker"] },
+    { id: "RT_C04", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_04_white_circle_wordmark.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_04_white_circle_wordmark.png", tags: ["white", "circle", "minimal"] },
+    { id: "RT_C05", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_05_another_zone_sneaker.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_05_another_zone_sneaker.png", tags: ["sneaker", "athletic", "dynamic"] },
+    { id: "RT_C06", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_06_orange_lightning_nameplate.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_06_orange_lightning_nameplate.png", tags: ["orange", "lightning", "nameplate"] },
+    { id: "RT_C07", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_07_white_bubbly_street_word.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_07_white_bubbly_street_word.png", tags: ["bubbly", "white", "street"] },
+    { id: "RT_C08", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_08_skull_time_to_die.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_08_skull_time_to_die.png", tags: ["skull", "dark", "punk"] },
+    { id: "RT_C09", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_01.png", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_09_mouth_wordmark.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r01_09_mouth_wordmark.png", tags: ["mouth", "pop-art", "red"] },
+    { id: "RT_C10", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_02.jpg", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_01_summer_circular_badge.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_01_summer_circular_badge.png", tags: ["summer", "circular", "vintage"] },
+    { id: "RT_C11", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_02.jpg", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_02_golden_sunrise_badge.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_02_golden_sunrise_badge.png", tags: ["golden", "sunrise", "badge"] },
+    { id: "RT_C12", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_02.jpg", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_03_orange_stacked_vertical_type.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_03_orange_stacked_vertical_type.png", tags: ["orange", "stacked", "vertical"] },
+    { id: "RT_C13", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_02.jpg", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_04_blue_shark_fish_type.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_04_blue_shark_fish_type.png", tags: ["blue", "shark", "dynamic"] },
+    { id: "RT_C14", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_02.jpg", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_05_flame_wordmark.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_05_flame_wordmark.png", tags: ["flame", "hot", "red"] },
+    { id: "RT_C15", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_02.jpg", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_06_yellow_lightning_script.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_06_yellow_lightning_script.png", tags: ["yellow", "lightning", "script"] },
+    { id: "RT_C16", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_02.jpg", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_07_red_distorted_banner.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_07_red_distorted_banner.png", tags: ["red", "distorted", "banner"] },
+    { id: "RT_C17", category: "Retro", sourceImagePath: "/Elite_72_Library_Organized/Retro/Retro_02.jpg", previewImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_08_yellow_hand_surf_mark.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/crops/r02_08_yellow_hand_surf_mark.png", tags: ["yellow", "hand", "surf"] },
+    { id: "RT_03", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_03.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_03.jpg", tags: ["vortex", "glass", "elite", "rainbow"] },
+    { id: "RT_04", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_04.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_04.jpg", tags: ["groovy", "script", "70s"] },
+    { id: "RT_05", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_05.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_05.png", tags: ["checker", "pop", "red"] },
+    { id: "RT_06", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_06.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_06.png", tags: ["sunset", "pixel", "wave"] },
+    { id: "RT_07", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_07.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_07.png", tags: ["glow", "arcade", "blue"] },
+    { id: "RT_08", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_08.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_08.png", tags: ["ink", "pulp", "comics"] },
+    { id: "RT_09", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_09.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_09.png", tags: ["chrome", "bumper", "metallic"] },
+    { id: "RT_10", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_10.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_10.jpg", tags: ["neon", "pink", "sign"] },
+    { id: "RT_11", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_14.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_14.png", tags: ["vhs", "glitch", "static"] },
+    { id: "RT_12", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_15.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_15.jpg", tags: ["airbrush", "gradient", "soft"] },
+    { id: "RT_13", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_12.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_12.jpg", tags: ["disco", "ball", "silver"] },
+    { id: "RT_14", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_11.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_11.jpg", tags: ["lava", "lamp", "organic"] },
+    { id: "RT_15", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_13.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_13.jpg", tags: ["glitter", "sparkle", "gold"] },
+    { id: "RT_16", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_16.png", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_16.png", tags: ["rainbow", "extrusion", "stylish", "3d"] },
+    { id: "RT_17", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_17.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_17.jpg", tags: ["isometric", "glow", "pink", "3d"] },
+    { id: "RT_18", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_18.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_18.jpg", tags: ["shadow", "block", "retro", "juice"] },
+    { id: "RT_19", category: "Retro", previewImagePath: "/Elite_72_Library_Organized/Retro/Retro_19.jpg", referenceImagePath: "/Elite_72_Library_Organized/Retro/Retro_19.jpg", tags: ["hero", "pop", "bold", "comic"] },
+  ],
+  Organic: [
+    { id: "OR_01", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_01.png", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_01.png", tags: ["flame", "madnor", "silhouette"] },
+    { id: "OR_02", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_02.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_02.jpg", tags: ["slime", "pink", "drip"] },
+    { id: "OR_03", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_03.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_03.jpg", tags: ["ice", "crystals", "sharp"] },
+    { id: "OR_04", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_04.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_04.jpg", tags: ["molten", "lava", "hot"] },
+    { id: "OR_05", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_05.png", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_05.png", tags: ["watermelon", "market", "fresh"] },
+    { id: "OR_06", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_06.png", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_06.png", tags: ["slime", "green", "biohazard"] },
+    { id: "OR_07", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_07.png", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_07.png", tags: ["cloud", "soft", "fluffy"] },
+    { id: "OR_08", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_08.png", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_08.png", tags: ["liquid", "mercury", "chrome"] },
+    { id: "OR_09", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_09.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_09.jpg", tags: ["moss", "green", "nature"] },
+    { id: "OR_10", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_10.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_10.jpg", tags: ["honey", "sticky", "amber"] },
+    { id: "OR_11", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_11.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_11.jpg", tags: ["jelly", "translucent", "wiggle"] },
+    { id: "OR_12", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_12.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_12.jpg", tags: ["neural", "web", "organic"] },
+    { id: "OR_13", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_13.png", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_13.png", tags: ["soft", "pillowy", "pastel"] },
+    { id: "OR_14", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_14.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_14.jpg", tags: ["meat", "steak", "marbling"] },
+    { id: "OR_15", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_15.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_15.jpg", tags: ["brain", "inflate"] },
+    { id: "OR_16", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_16.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_16.jpg", tags: ["sushi", "calligram"] },
+    { id: "OR_17", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_17.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_17.jpg", tags: ["fuzzy", "felt"] },
+    { id: "OR_18", category: "Organic", previewImagePath: "/Elite_72_Library_Organized/Organic/Organic_18.jpg", referenceImagePath: "/Elite_72_Library_Organized/Organic/Organic_18.jpg", tags: ["fur", "script"] },
+  ],
+  Geometric: [
+    { id: "GE_01", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_01.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_01.jpg", tags: ["void", "slab", "monolith"] },
+    { id: "GE_02", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_02.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_02.jpg", tags: ["packed", "circles", "generative"] },
+    { id: "GE_03", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_03.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_03.jpg", tags: ["monoline", "blueprint", "cad"] },
+    { id: "GE_04", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_04.png", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_04.png", tags: ["bauhaus", "primary", "shapes"] },
+    { id: "GE_05", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_05.png", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_05.png", tags: ["wireframe", "mesh", "topology"] },
+    { id: "GE_06", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_06.png", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_06.png", tags: ["isometric", "cube", "modular"] },
+    { id: "GE_07", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_07.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_07.jpg", tags: ["spiral", "golden", "divine"] },
+    { id: "GE_08", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_08.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_08.jpg", tags: ["tech", "grid", "lines"] },
+    { id: "GE_09", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_09.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_09.jpg", tags: ["diagonal", "slash", "bold"] },
+    { id: "GE_10", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_10.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_10.jpg", tags: ["abstract", "overlap", "multi"] },
+    { id: "GE_11", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_11.png", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_11.png", tags: ["minimal", "dot", "matrix"] },
+    { id: "GE_12", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_12.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_12.jpg", tags: ["industrial", "mesh", "steel"] },
+    { id: "GE_13", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_13.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_13.jpg", tags: ["echo", "slice", "repetition"] },
+    { id: "GE_14", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_14.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_14.jpg", tags: ["echo", "slice", "sliced", "white"] },
+    { id: "GE_15", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_15.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_15.jpg", tags: ["double", "line", "outline", "white"] },
+    { id: "GE_16", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_16.jpg", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_16.jpg", tags: ["overlap", "shapes", "bauhaus", "colors"] },
+    { id: "GE_17", category: "Geometric", previewImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_17.png", referenceImagePath: "/Elite_72_Library_Organized/Geometric/Geometric_17.png", tags: ["bauhaus", "block", "stamp", "letterpress"] },
+  ],
+  Street: [
+    { id: "ST_01", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_01.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_01.jpg", tags: ["flame", "script", "retro"] },
+    { id: "ST_02", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_02.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_02.jpg", tags: ["gothic", "calligraphy", "ink"] },
+    { id: "ST_03", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_03.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_03.png", tags: ["kronic", "bubble", "wawasan"] },
+    { id: "ST_04", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_04.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_04.jpg", tags: ["fire", "stone", "gothic"] },
+    { id: "ST_05", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_05.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_05.png", tags: ["soon", "graffiti", "bubble"] },
+    { id: "ST_06", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_06.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_06.png", tags: ["silver", "handstyle", "script"] },
+    { id: "ST_07", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_07.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_07.png", tags: ["chrome", "bubble", "throw-up"] },
+    { id: "ST_08", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_08.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_08.png", tags: ["lorn", "slap", "sticker"] },
+    { id: "ST_09", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_09.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_09.jpg", tags: ["shine", "graffiti", "burner"] },
+    { id: "ST_10", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_10.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_10.jpg", tags: ["neon", "blue", "le"] },
+    { id: "ST_11", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_11.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_11.jpg", tags: ["elden", "lightning", "comic"] },
+    { id: "ST_12", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_12.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_12.png", tags: ["lorn", "drip", "ink"] },
+    { id: "ST_13", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_13.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_13.png", tags: ["lorn", "block", "poster"] },
+    { id: "ST_NEW_01", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_14.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_14.png", tags: ["wawasan", "explosion", "bubbly", "graffiti"] },
+    { id: "ST_NEW_02", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_15.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_15.jpg", tags: ["flame", "stone", "gothic", "cracked"] },
+    { id: "ST_NEW_03", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_16.png", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_16.png", tags: ["graffiti", "bubble", "soon", "explosion"] },
+    { id: "ST_NEW_04", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_17.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_17.jpg", tags: ["lightning", "comic", "block", "elden"] },
+    { id: "ST_NEW_05", category: "Street", previewImagePath: "/Elite_72_Library_Organized/Street/Street_18.jpg", referenceImagePath: "/Elite_72_Library_Organized/Street/Street_18.jpg", tags: ["flame", "script", "retro", "cool"] },
+  ],
+  Brutalist: [
+    { id: "BT_01", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_01.jpg", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_01.jpg", tags: ["loud", "era", "block"] },
+    { id: "BT_02", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_02.jpg", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_02.jpg", tags: ["industrial", "slab", "iron"] },
+    { id: "BT_03", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_03.jpg", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_03.jpg", tags: ["stacked", "warehouse", "box"] },
+    { id: "BT_04", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_04.png", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_04.png", tags: ["glitch", "digital", "error"] },
+    { id: "BT_05", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_05.png", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_05.png", tags: ["raw", "plywood", "cnc"] },
+    { id: "BT_06", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_06.png", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_06.png", tags: ["asphalt", "road", "heavy"] },
+    { id: "BT_07", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_07.jpg", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_07.jpg", tags: ["blueprint", "precise", "technical"] },
+    { id: "BT_08", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_08.gif", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_08.gif", tags: ["mesh", "diamond", "expanded"] },
+    { id: "BT_09", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_09.jpg", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_09.jpg", tags: ["rubber", "mat", "diamond"] },
+    { id: "BT_10", category: "Brutalist", previewImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_10.jpg", referenceImagePath: "/Elite_72_Library_Organized/Brutalist/Brutalist_10.jpg", tags: ["embossed", "monolith", "amber"] },
+  ],
+  Hybrid: [
+    { id: "HB_01", category: "Hybrid", tags: ["flame", "madnor", "fire", "hybrid"] },
+    { id: "HB_02", category: "Hybrid", tags: ["neon", "blue", "industrial"] },
+    { id: "HB_03", category: "Hybrid", tags: ["retro", "metal", "mesh", "orange"] },
+    { id: "HB_04", category: "Hybrid", tags: ["sticker", "slap", "street"] },
+    { id: "HB_05", category: "Hybrid", tags: ["calligraphy", "silver", "street"] },
+    { id: "HB_06", category: "Hybrid", tags: ["pixel", "chrome", "synth"] },
+    { id: "HB_07", category: "Hybrid", tags: ["cloud", "soft", "puff", "hybrid"] },
+    { id: "HB_08", category: "Hybrid", tags: ["bauhaus", "primary", "geometric"] },
+    { id: "PX_01", category: "Hybrid", tags: ["premium", "vortex", "rainbow"] },
+  ]
+};
