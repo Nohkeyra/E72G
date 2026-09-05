@@ -15,51 +15,82 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
   let finalMimeType = params.mimeType;
 
   if (!finalBase64 && (preset?.sourceImagePath || preset?.referenceImagePath || preset?.previewImagePath)) {
-     try {
-       if (preset.cropBox && preset.sourceImagePath) {
-         // Frontend Image Processing Engine
-         // Slice based on frontend crop coordinates
-         const croppedBaseUrl = await cropImage(
-           preset.sourceImagePath,
-           preset.cropBox,
-           'image/jpeg',
-           0.95
-         );
-         finalBase64 = croppedBaseUrl.split(',')[1] || croppedBaseUrl;
-         finalMimeType = 'image/jpeg';
-       } else {
-         const prepRes = await fetch("/api/prepare-reference", {
-           method: "POST",
-           headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({
-             sourceImagePath: preset.sourceImagePath,
-             referenceImagePath: preset.referenceImagePath || preset.previewImagePath,
-             cropBox: preset.cropBox
-           }),
-           signal
-         });
-         
-         if (prepRes.ok) {
-           const data = await prepRes.json();
-           finalBase64 = data.base64;
-           finalMimeType = data.mimeType;
-         } else if (preset.referenceImagePath || preset.previewImagePath) {
-            // Fallback: load the reference image directly via frontend if API fails
-            const imgPath = preset.referenceImagePath || preset.previewImagePath;
-            const res = await fetch(imgPath);
-            const blob = await res.blob();
-            finalBase64 = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
+    try {
+      if (preset.cropBox && preset.sourceImagePath) {
+        // Frontend Image Processing Engine: crop directly via Canvas
+        try {
+          const croppedBaseUrl = await cropImage(
+            preset.sourceImagePath,
+            preset.cropBox,
+            'image/jpeg',
+            0.95
+          );
+          finalBase64 = croppedBaseUrl.split(',')[1] || croppedBaseUrl;
+          finalMimeType = 'image/jpeg';
+        } catch (cropErr) {
+          console.warn("Frontend canvas crop failed, attempting backend fallback:", cropErr);
+          const prepRes = await fetch("/api/prepare-reference", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sourceImagePath: preset.sourceImagePath,
+              referenceImagePath: preset.referenceImagePath || preset.previewImagePath,
+              cropBox: preset.cropBox
+            }),
+            signal
+          });
+          if (prepRes.ok) {
+            const data = await prepRes.json();
+            finalBase64 = data.base64;
+            finalMimeType = data.mimeType;
+          }
+        }
+      } else {
+        const imgPath = preset.referenceImagePath || preset.previewImagePath;
+        if (imgPath) {
+          // 1. First try client-side fetch (works in Android APK and Web directly)
+          try {
+            const res = await fetch(imgPath, { signal });
+            if (res.ok) {
+              const blob = await res.blob();
+              finalBase64 = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const result = reader.result as string;
+                  resolve(result.includes(',') ? result.split(',')[1] : result);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              finalMimeType = blob.type || 'image/jpeg';
+            }
+          } catch (clientFetchErr) {
+            console.warn("Client-side image fetch failed, attempting API fallback:", clientFetchErr);
+          }
+
+          // 2. Fallback to API if client-side didn't resolve base64
+          if (!finalBase64) {
+            const prepRes = await fetch("/api/prepare-reference", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sourceImagePath: preset.sourceImagePath,
+                referenceImagePath: imgPath,
+                cropBox: preset.cropBox
+              }),
+              signal
             });
-            finalMimeType = blob.type;
-         }
-       }
-     } catch (e) {
-       console.warn("Failed to prepare reference image:", e);
-     }
+            if (prepRes.ok) {
+              const data = await prepRes.json();
+              finalBase64 = data.base64;
+              finalMimeType = data.mimeType;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to prepare reference image:", e);
+    }
   } else if (finalBase64 && preset?.cropBox) {
       // If user provided a base64 image and a crop box is selected somehow
       try {
