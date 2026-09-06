@@ -20,27 +20,27 @@ export interface ModelInfo {
 export const modelRegistry: Record<ImageModel, ModelInfo> = {
   gemini: {
     id: 'gemini',
-    label: 'Gemini 3.1 Flash Image',
+    label: 'Gemini 3.6 Flash (Fast Synthesis)',
     provider: 'google_gemini',
-    modelId: 'gemini-3.1-flash-image-preview',
+    modelId: 'gemini-3.6-flash',
     requiresApiKey: false,
     previewCompatible: true,
     billingStatus: 'Free tier with quota'
   },
   'gemini-flash': {
     id: 'gemini-flash',
-    label: 'Gemini 2.5 Flash Image',
+    label: 'Gemini 3.6 Flash',
     provider: 'google_gemini',
-    modelId: 'gemini-2.5-flash-image',
+    modelId: 'gemini-3.6-flash',
     requiresApiKey: false,
     previewCompatible: true,
     billingStatus: 'Free tier with quota'
   },
   'gemini-image': {
     id: 'gemini-image',
-    label: 'Gemini 3.1 Flash Image (Preview)',
+    label: 'Gemini 3.6 Flash Multimodal',
     provider: 'google_gemini',
-    modelId: 'gemini-3.1-flash-image-preview',
+    modelId: 'gemini-3.6-flash',
     requiresApiKey: false,
     previewCompatible: true,
     billingStatus: 'Free tier with quota'

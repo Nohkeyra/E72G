@@ -56,9 +56,10 @@ export const isGeminiQuotaExceeded = (): boolean => {
   return quota.count >= QUOTA_LIMIT;
 };
 
-export const checkQuota = () => {
+export const checkQuota = (hasCustomKey: boolean = false) => {
+  if (hasCustomKey) return; // User's custom API key bypasses local client daily limit
   const quota = getGeminiQuota();
   if (quota.count >= QUOTA_LIMIT) {
-    throw new Error("Gemini Engine Quota Exceeded. Daily limit reached \u2014 please try again tomorrow.");
+    throw new Error("Gemini Engine Quota Exceeded. Daily limit reached — please add your free API key in Settings to bypass this limit.");
   }
 };

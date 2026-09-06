@@ -8,9 +8,12 @@ export interface GeminiAnalysisResult {
   objects: Array<{ id: string; label: string; pose_orientation: string; box_2d: [number, number, number, number] }>;
 }
 
+const DEFAULT_GEMINI_KEY = 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo';
+
 export async function analyzeImage(base64Image: string, mimeType: string, apiKeyOverride?: string, retries = 3, delay = 1000): Promise<GeminiAnalysisResult> {
   
-  const apiKey = apiKeyOverride || process.env.GEMINI_API_KEY || import.meta.env?.VITE_GEMINI_API_KEY || import.meta.env?.VITE_API_KEY;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const apiKey = apiKeyOverride || (typeof process !== 'undefined' ? (process.env as any).GEMINI_API_KEY : '') || (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY || DEFAULT_GEMINI_KEY;
   if (!apiKey) {
     throw new Error("Gemini API key not found.");
   }
@@ -22,7 +25,7 @@ export async function analyzeImage(base64Image: string, mimeType: string, apiKey
     const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents: {
         parts: [
           {

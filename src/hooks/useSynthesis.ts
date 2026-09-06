@@ -191,9 +191,10 @@ export function useSynthesis() {
       addDebugLog('handleGenerate: starting generation');
       addLog('Synthesizing visual asset with Gemini...', 'info');
       
-      const modelInfo = validateModelCall(selectedModel, !!getActiveGeminiKey());
+      const currentKey = getActiveGeminiKey();
+      const modelInfo = validateModelCall(selectedModel, !!currentKey);
       
-      checkQuota();
+      checkQuota(!!currentKey);
       
       // Apply attention mechanisms based on the selected model
       finalPrompt = formatForGeminiAttention(finalPrompt);

@@ -138,6 +138,40 @@ export async function callGemini(args: {
   const ai = createAiClient(apiKeyOverride);
   const selectedAspectRatio = normalizeAspectRatio(aspectRatio);
 
+  let lastError: unknown = null;
+
+  // 1. Direct Imagen 3 generation for high-fidelity text-to-image synthesis
+  if (!base64Image) {
+    try {
+      const imgResponse = await ai.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: prompt,
+        config: {
+          numberOfImages: 1,
+          outputMimeType: 'image/jpeg',
+          aspectRatio: selectedAspectRatio,
+        }
+      });
+
+      if (imgResponse.generatedImages?.[0]?.image?.imageBytes) {
+        const b64 = imgResponse.generatedImages[0].image.imageBytes;
+        return {
+          image: `data:image/jpeg;base64,${b64}`,
+          modelUsed: 'imagen-3.0-generate-002'
+        };
+      }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (imagenErr: any) {
+      console.warn('[GEMINI ENGINE] Imagen 3 direct generation attempt skipped, trying multimodal fallbacks...', imagenErr);
+      const msg = imagenErr?.message || String(imagenErr);
+      if (msg.includes("401") || msg.includes("invalid") || msg.includes("API key not valid")) {
+        throw new Error(`Invalid Gemini API key. Please check your key in Settings.`, { cause: imagenErr });
+      }
+      lastError = imagenErr;
+    }
+  }
+
+  // 2. Multimodal Gemini synthesis pipeline for style-reference & image-to-image tasks
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const parts: any[] = [];
 
@@ -157,24 +191,15 @@ export async function callGemini(args: {
     parts.push({ text: prompt });
   }
 
-  // Model routing: use modern Gemini multimodal image models
-  const primaryModel = (model && !model.includes('imagen'))
-    ? model
-    : 'gemini-3.1-flash-image-preview';
-
-  const fallbackModels = Array.from(new Set([
-    primaryModel,
-    'gemini-3.1-flash-image-preview',
-    'gemini-2.5-flash-image',
-    'gemini-3.1-flash-lite-image',
-    'gemini-2.5-flash'
+  const validMultimodalModels = Array.from(new Set([
+    'gemini-3.6-flash',
+    (model && !model.includes('imagen') && !model.includes('preview')) ? model : 'gemini-3.6-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash'
   ])).filter(Boolean);
 
-  let lastError: unknown = null;
-
-  for (const targetModel of fallbackModels) {
+  for (const targetModel of validMultimodalModels) {
     try {
-      // Modern Gemini image generation using generateContent with responseModalities
       let response: GenerateContentResponse | null = null;
       try {
         response = await ai.models.generateContent({
@@ -190,28 +215,15 @@ export async function callGemini(args: {
           } as any
         });
       } catch (modalityErr) {
-        console.warn(`[GEMINI ENGINE] Visual modality config attempt on '${targetModel}' bypassed. Falling back to single modality...`, modalityErr);
-        try {
-          response = await ai.models.generateContent({
-            model: targetModel,
-            contents: { parts },
-            config: {
-              systemInstruction: VORTEX_SYSTEM_INSTRUCTION,
-              responseModalities: ["IMAGE"]
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any
-          });
-        } catch (imgOnlyErr) {
-          console.warn(`[GEMINI ENGINE] Image-only modality on '${targetModel}' failed. Trying standard prompt stream...`, imgOnlyErr);
-          response = await ai.models.generateContent({
-            model: targetModel,
-            contents: { parts },
-            config: {
-              systemInstruction: VORTEX_SYSTEM_INSTRUCTION
-            }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          } as any);
-        }
+        console.warn(`[GEMINI ENGINE] Visual modality config on '${targetModel}' bypassed. Trying standard prompt...`, modalityErr);
+        response = await ai.models.generateContent({
+          model: targetModel,
+          contents: { parts },
+          config: {
+            systemInstruction: VORTEX_SYSTEM_INSTRUCTION
+          }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any);
       }
 
       if (response) {
@@ -223,77 +235,41 @@ export async function callGemini(args: {
           };
         }
 
-        const textOutput = response.text || "Gemini completed generation.";
-        return {
-          text: textOutput,
-          modelUsed: targetModel
-        };
+        if (response.text) {
+          return {
+            text: response.text,
+            modelUsed: targetModel
+          };
+        }
       }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       lastError = error;
       const msg = error?.message || String(error);
 
-      // Handle 401 Unauthorized immediately
       if (msg.includes("401") || msg.includes("invalid") || msg.includes("API key not valid")) {
-        throw new Error(`Invalid or missing Gemini API key. Please check your key in Settings or .env file.`, { cause: error });
+        throw new Error(`Invalid Gemini API key. Please check your key in Settings.`, { cause: error });
       }
 
-      // Handle 429 Rate Limit with 5-second cooldown retry
       if (msg.includes("429") || msg.includes("Quota") || msg.includes("RESOURCE_EXHAUSTED")) {
-        console.warn(`[GEMINI ENGINE] Rate limit (429) encountered on '${targetModel}'. Waiting 5 seconds for cooldown before retry...`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        try {
-          const retryResponse = await ai.models.generateContent({
-            model: targetModel,
-            contents: { parts },
-            config: {
-              systemInstruction: VORTEX_SYSTEM_INSTRUCTION,
-              responseModalities: ["IMAGE", "TEXT"],
-              imageConfig: {
-                aspectRatio: selectedAspectRatio
-              }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any
-          });
-          const extracted = extractImageFromResponse(retryResponse);
-          if (extracted) {
-            return { image: extracted, modelUsed: targetModel };
-          }
-          if (retryResponse.text) {
-            return { text: retryResponse.text, modelUsed: targetModel };
-          }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (retryErr: any) {
-          const retryMsg = (retryErr as Error)?.message || String(retryErr);
-          if (retryMsg.includes("429") || retryMsg.includes("Quota") || retryMsg.includes("RESOURCE_EXHAUSTED")) {
-            throw new Error("Rate limit reached. Please wait a moment before trying again.", { cause: retryErr });
-          }
-        }
+        console.warn(`[GEMINI ENGINE] Rate limit (429) encountered on '${targetModel}'.`);
+        throw new Error("Rate limit reached. Please wait a moment before trying again.", { cause: error });
       }
 
-      // Intercept any modal synthesis failure, validation error, or 404 and safely continue
-      console.warn(`[GEMINI ENGINE] Model attempt '${targetModel}' encountered an issue: ${msg}. Trying fallback...`);
+      console.warn(`[GEMINI ENGINE] Model '${targetModel}' attempt issue: ${msg}. Trying next fallback...`);
       continue;
     }
   }
 
-  // Graceful fallback response if all models encounter issues
   if (lastError) {
     const errorString = lastError instanceof Error ? lastError.message : String(lastError);
     if (errorString.includes("429") || errorString.includes("RESOURCE_EXHAUSTED") || errorString.includes("Rate limit")) {
       throw new Error("Rate limit reached. Please wait a moment before trying again.");
     }
-    return {
-      text: `Synthesis completed with text fallback notice: ${errorString}`,
-      modelUsed: 'gemini-3.1-flash-image-preview'
-    };
+    throw new Error(`Synthesis error: ${errorString}`);
   }
 
-  return {
-    text: "Synthesis process finished with fallback.",
-    modelUsed: 'gemini-3.1-flash-image-preview'
-  };
+  throw new Error("Unable to complete image generation with available models.");
 }
 
 /**
@@ -303,7 +279,7 @@ export async function checkGeminiConnection(apiKeyOverride?: string): Promise<{ 
   const start = Date.now();
   try {
     const ai = createAiClient(apiKeyOverride);
-    const candidateModels = ['gemini-2.5-flash', 'gemini-3.8-flash'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
     
     let lastResponse: GenerateContentResponse | null = null;
     for (const model of candidateModels) {
@@ -357,7 +333,7 @@ export async function analyzeImage(
   const promptText = `Role: You are a Structural Design Auditor. Define the artistic style as a JSON object. Focus on ${activeTab === "logo design" ? "LOGO DESIGN" : "GRAPHIC ILLUSTRATION"} elements.
 Return a JSON object: { "name": string, "basePrompt": string, "negativePrompt": string, "aspectRatio": "1:1", "dnaWeight": number, "textureIntensity": number }`;
 
-  const candidateModels = ['gemini-2.5-flash', 'gemini-3.8-flash'];
+  const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
   for (const model of candidateModels) {
     try {
@@ -430,7 +406,7 @@ export async function refineTypographyPrompt(
     const ai = createAiClient(apiKey);
     const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
 
-    const candidateModels = ['gemini-2.5-flash', 'gemini-3.8-flash'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
     for (const model of candidateModels) {
       try {
         const response: GenerateContentResponse = await ai.models.generateContent({

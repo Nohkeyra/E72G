@@ -27,24 +27,30 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
           );
           finalBase64 = croppedBaseUrl.split(',')[1] || croppedBaseUrl;
           finalMimeType = 'image/jpeg';
-        } catch (cropErr) {
-          console.warn("Frontend canvas crop failed, attempting backend fallback:", cropErr);
-          const prepRes = await fetch("/api/prepare-reference", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sourceImagePath: preset.sourceImagePath,
-              referenceImagePath: preset.referenceImagePath || preset.previewImagePath,
-              cropBox: preset.cropBox
-            }),
-            signal
-          });
-          if (prepRes.ok) {
-            const data = await prepRes.json();
-            finalBase64 = data.base64;
-            finalMimeType = data.mimeType;
+          } catch (cropErr) {
+            console.warn("Frontend canvas crop failed, attempting backend fallback:", cropErr);
+            if (typeof window !== 'undefined' && window.location.origin.includes('.run.app')) {
+              try {
+                const prepRes = await fetch("/api/prepare-reference", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    sourceImagePath: preset.sourceImagePath,
+                    referenceImagePath: preset.referenceImagePath || preset.previewImagePath,
+                    cropBox: preset.cropBox
+                  }),
+                  signal
+                });
+                if (prepRes.ok) {
+                  const data = await prepRes.json();
+                  finalBase64 = data.base64;
+                  finalMimeType = data.mimeType;
+                }
+              } catch (apiErr) {
+                console.warn("API fallback skipped in current environment:", apiErr);
+              }
+            }
           }
-        }
       } else {
         const imgPath = preset.referenceImagePath || preset.previewImagePath;
         if (imgPath) {
@@ -68,22 +74,26 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
             console.warn("Client-side image fetch failed, attempting API fallback:", clientFetchErr);
           }
 
-          // 2. Fallback to API if client-side didn't resolve base64
-          if (!finalBase64) {
-            const prepRes = await fetch("/api/prepare-reference", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sourceImagePath: preset.sourceImagePath,
-                referenceImagePath: imgPath,
-                cropBox: preset.cropBox
-              }),
-              signal
-            });
-            if (prepRes.ok) {
-              const data = await prepRes.json();
-              finalBase64 = data.base64;
-              finalMimeType = data.mimeType;
+          // 2. Fallback to API if client-side didn't resolve base64 and server API is available
+          if (!finalBase64 && typeof window !== 'undefined' && window.location.origin.includes('.run.app')) {
+            try {
+              const prepRes = await fetch("/api/prepare-reference", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sourceImagePath: preset.sourceImagePath,
+                  referenceImagePath: imgPath,
+                  cropBox: preset.cropBox
+                }),
+                signal
+              });
+              if (prepRes.ok) {
+                const data = await prepRes.json();
+                finalBase64 = data.base64;
+                finalMimeType = data.mimeType;
+              }
+            } catch (apiErr) {
+              console.warn("API fallback skipped:", apiErr);
             }
           }
         }

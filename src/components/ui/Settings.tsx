@@ -48,6 +48,8 @@ export const Settings: React.FC<SettingsProps> = ({
   const [publicBackendUrl, setPublicBackendUrl] = useState(() => safeLocalStorage.getItem('publicBackendUrl') || '');
 
   const [activeTab, setActiveTab] = useState<'system' | 'keys' | 'diagnostics'>('system');
+  const [isTestingKey, setIsTestingKey] = useState(false);
+  const [keyTestResult, setKeyTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     // Sync to local storage when backend url changes locally
@@ -320,33 +322,70 @@ export const Settings: React.FC<SettingsProps> = ({
                   <label className="text-[9px] font-bold uppercase tracking-[0.2em] text-text-secondary opacity-60">
                     Gemini API Key
                   </label>
-                  {(geminiApiKey || geminiKeys[0]) && (
+                  {geminiApiKey && geminiApiKey !== 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo' && (
                     <button
                       onClick={() => {
                         if (setGeminiApiKey) setGeminiApiKey('');
                         if (setGeminiKeys) setGeminiKeys(['']);
+                        addLog('API key cleared. Defaulting to shared key.', 'info');
                       }}
                       className="text-[9px] text-red-500 hover:text-red-400 font-mono"
                     >
-                      [CLEAR]
+                      [CLEAR_CUSTOM_KEY]
                     </button>
                   )}
                 </div>
-                <div className="relative group/input flex items-center gap-2">
+                <div className="relative group/input flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     type="password"
-                    value={geminiApiKey !== undefined ? geminiApiKey : (geminiKeys[0] || '')}
+                    value={geminiApiKey === 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo' ? '' : (geminiApiKey || '')}
                     onChange={(e) => {
-                      const val = e.target.value;
+                      const val = e.target.value.trim();
                       if (setGeminiApiKey) setGeminiApiKey(val);
                       if (setGeminiKeys) setGeminiKeys([val]);
                     }}
-                    placeholder="AIzaSy..."
-                    className="w-full bg-bg-primary/30 border border-border-primary rounded-xl px-4 py-3 text-xs font-mono text-blue-400 placeholder-blue-400/20 focus:outline-none focus:border-blue-500/40 transition-all shadow-inner group-hover/input:bg-bg-primary/50"
+                    placeholder="Paste AIzaSy... key here"
+                    className="w-full bg-bg-primary/50 border border-border-primary rounded-xl px-4 py-3 text-xs font-mono text-blue-400 placeholder-blue-400/30 focus:outline-none focus:border-blue-500/60 transition-all shadow-inner"
                   />
+                  <button
+                    type="button"
+                    disabled={isTestingKey}
+                    onClick={async () => {
+                      setIsTestingKey(true);
+                      setKeyTestResult(null);
+                      const keyToTest = (geminiApiKey && geminiApiKey !== 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo') ? geminiApiKey : undefined;
+                      addLog('Testing Gemini API key connection...', 'process');
+                      const result = await checkGeminiConnection(keyToTest);
+                      setIsTestingKey(false);
+                      if (result.success) {
+                        setKeyTestResult({ success: true, message: `Verified! (${result.latency}ms) - ${result.details}` });
+                        addLog(`API Key Verified! (${result.latency}ms) - ${result.details}`, 'success');
+                      } else {
+                        setKeyTestResult({ success: false, message: `Failed: ${result.details}` });
+                        addLog(`API Key Test Failed: ${result.details}`, 'error');
+                      }
+                    }}
+                    className="px-4 py-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider shrink-0 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isTestingKey ? 'Testing...' : 'Test Key'}
+                  </button>
                 </div>
+                {isTestingKey && (
+                  <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-[10px] font-mono text-blue-400 animate-pulse flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+                    <span>Testing connection to Gemini API...</span>
+                  </div>
+                )}
+                {keyTestResult && (
+                  <div className={`p-3 rounded-xl border text-[10px] font-mono font-bold flex items-center gap-2 ${keyTestResult.success ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' : 'bg-red-500/10 border-red-500/40 text-red-400'}`}>
+                    <span>{keyTestResult.success ? '✅' : '❌'}</span>
+                    <span>{keyTestResult.message}</span>
+                  </div>
+                )}
                 <p className="text-[9px] text-text-secondary opacity-60 font-mono">
-                  Uses the single API key from here or environment variable <span className="text-blue-400">GEMINI_API_KEY</span>.
+                  {geminiApiKey && geminiApiKey !== 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo' 
+                    ? '✓ Using custom Gemini API key' 
+                    : 'Currently using default shared fallback key. Paste your own free API key above to avoid quotas.'}
                 </p>
               </div>
 
