@@ -140,35 +140,36 @@ export async function callGemini(args: {
 
   let lastError: unknown = null;
 
-  // 1. Direct Imagen 3 generation for high-fidelity text-to-image synthesis
-  if (!base64Image) {
-    try {
-      const imgResponse = await ai.models.generateImages({
-        model: 'imagen-3.0-generate-002',
-        prompt: prompt,
-        config: {
-          numberOfImages: 1,
-          outputMimeType: 'image/jpeg',
-          aspectRatio: selectedAspectRatio,
-        }
-      });
+  // 1. Direct Imagen 4 generation for high-fidelity text-to-image synthesis
+  try {
+    const imgResponse = await ai.models.generateImages({
+      model: 'imagen-4.0-generate-001',
+      prompt: prompt,
+      config: {
+        numberOfImages: 1,
+        outputMimeType: 'image/jpeg',
+        aspectRatio: selectedAspectRatio,
+      }
+    });
 
-      if (imgResponse.generatedImages?.[0]?.image?.imageBytes) {
-        const b64 = imgResponse.generatedImages[0].image.imageBytes;
-        return {
-          image: `data:image/jpeg;base64,${b64}`,
-          modelUsed: 'imagen-3.0-generate-002'
-        };
-      }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (imagenErr: any) {
-      console.warn('[GEMINI ENGINE] Imagen 3 direct generation attempt skipped, trying multimodal fallbacks...', imagenErr);
-      const msg = imagenErr?.message || String(imagenErr);
-      if (msg.includes("401") || msg.includes("invalid") || msg.includes("API key not valid")) {
-        throw new Error(`Invalid Gemini API key. Please check your key in Settings.`, { cause: imagenErr });
-      }
-      lastError = imagenErr;
+    if (imgResponse.generatedImages?.[0]?.image?.imageBytes) {
+      const b64 = imgResponse.generatedImages[0].image.imageBytes;
+      return {
+        image: `data:image/jpeg;base64,${b64}`,
+        modelUsed: 'imagen-4.0-generate-001'
+      };
     }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (imagenErr: any) {
+    console.warn('[GEMINI ENGINE] Imagen direct generation attempt skipped/failed, trying multimodal fallbacks...', imagenErr);
+    const msg = imagenErr?.message || String(imagenErr);
+    if (msg.includes("401") || msg.includes("invalid") || msg.includes("API key not valid")) {
+      throw new Error(`Invalid Gemini API key. Please check your key in Settings.`, { cause: imagenErr });
+    }
+    if (msg.includes("429") || msg.includes("Quota") || msg.includes("RESOURCE_EXHAUSTED")) {
+      throw new Error("Rate limit reached on Imagen. Please wait a moment before trying again.", { cause: imagenErr });
+    }
+    lastError = imagenErr;
   }
 
   // 2. Multimodal Gemini synthesis pipeline for style-reference & image-to-image tasks
@@ -235,11 +236,31 @@ export async function callGemini(args: {
           };
         }
 
+        // If Gemini Flash output a text prompt description, try generating an image with Imagen 4 using this enriched description!
         if (response.text) {
-          return {
-            text: response.text,
-            modelUsed: targetModel
-          };
+          try {
+            console.log('[GEMINI ENGINE] Converting multimodal Gemini text description to Imagen 4 visual asset...');
+            const enrichedPrompt = response.text.length > 2000 ? response.text.slice(0, 2000) : response.text;
+            const fallbackImg = await ai.models.generateImages({
+              model: 'imagen-4.0-generate-001',
+              prompt: enrichedPrompt,
+              config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: selectedAspectRatio,
+              }
+            });
+
+            if (fallbackImg.generatedImages?.[0]?.image?.imageBytes) {
+              const b64 = fallbackImg.generatedImages[0].image.imageBytes;
+              return {
+                image: `data:image/jpeg;base64,${b64}`,
+                modelUsed: 'imagen-4.0-generate-001'
+              };
+            }
+          } catch (fallbackErr) {
+            console.warn('[GEMINI ENGINE] Enriched text to Imagen fallback failed:', fallbackErr);
+          }
         }
       }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -266,10 +287,13 @@ export async function callGemini(args: {
     if (errorString.includes("429") || errorString.includes("RESOURCE_EXHAUSTED") || errorString.includes("Rate limit")) {
       throw new Error("Rate limit reached. Please wait a moment before trying again.");
     }
+    if (errorString.includes("401") || errorString.includes("invalid") || errorString.includes("API key not valid")) {
+      throw new Error("Invalid Gemini API key. Please check your key in Settings.");
+    }
     throw new Error(`Synthesis error: ${errorString}`);
   }
 
-  throw new Error("Unable to complete image generation with available models.");
+  throw new Error("Unable to complete image generation. Please check your API key and try again.");
 }
 
 /**
