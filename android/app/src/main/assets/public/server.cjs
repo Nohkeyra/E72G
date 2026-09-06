@@ -221,16 +221,41 @@ async function startServer() {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa"
+      appType: "custom"
     });
     app.use(vite.middlewares);
     app.use(import_express.default.static(import_path.default.join(process.cwd(), "public")));
+    app.use(async (req, res, next) => {
+      if (req.originalUrl.startsWith("/api/") || req.originalUrl.startsWith("/Elite_72_Library_Organized/")) {
+        return next();
+      }
+      try {
+        const indexPath = import_path.default.resolve(process.cwd(), "index.html");
+        if (import_fs.default.existsSync(indexPath)) {
+          let template = import_fs.default.readFileSync(indexPath, "utf-8");
+          template = await vite.transformIndexHtml(req.originalUrl, template);
+          res.status(200).set({ "Content-Type": "text/html" }).end(template);
+        } else {
+          next();
+        }
+      } catch (e) {
+        next(e);
+      }
+    });
   } else {
     const distPath = import_path.default.join(process.cwd(), "dist");
     app.use(import_express.default.static(distPath));
     app.use(import_express.default.static(import_path.default.join(process.cwd(), "public")));
-    app.get("*all", (req, res) => {
-      res.sendFile(import_path.default.join(distPath, "index.html"));
+    app.use((req, res, next) => {
+      if (req.originalUrl.startsWith("/api/") || req.originalUrl.startsWith("/Elite_72_Library_Organized/")) {
+        return next();
+      }
+      const indexPath = import_path.default.join(distPath, "index.html");
+      if (import_fs.default.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send("Application build in progress. Please refresh shortly.");
+      }
     });
   }
   app.listen(PORT, "0.0.0.0", () => {

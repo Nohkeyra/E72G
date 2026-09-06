@@ -157,10 +157,9 @@ export function useSynthesis() {
       }
     }, timeoutDuration);
 
-    addLog('[PROTOCOL START] Initiating multi-layer synthesis sequence...', 'process');
-    addLog('[STAGE 1] Analyzing structural DNA and visual anchors...', 'info');
-    setTimeout(() => addLog('[STAGE 2] Synthesizing high-fidelity geometry and materials...', 'info'), 1500);
-    setTimeout(() => addLog('[STAGE 3] Porting instructions to Vertex Core nodes...', 'info'), 3000);
+    addLog('Starting image generation...', 'process');
+    addLog('Analyzing prompt and style settings...', 'info');
+    setTimeout(() => addLog('Synthesizing image with Gemini Imagen engine...', 'info'), 1500);
 
     const currentModule = getModule(activeTab);
     

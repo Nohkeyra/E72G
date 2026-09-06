@@ -21,8 +21,8 @@ const DEFAULT_GEMINI_KEY = 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo';
 function getApiKey(apiKeyOverride?: string): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const key = apiKeyOverride || (process.env as any).GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY || DEFAULT_GEMINI_KEY;
-  if (!key) {
-    throw new Error("The Gemini API key is missing. Please check your environment configuration or provide a valid key in Settings.");
+  if (!key || key === 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo') {
+    throw new Error("Gemini API key is required. Please tap Settings (gear icon) and enter your Gemini API key.");
   }
   return key;
 }
