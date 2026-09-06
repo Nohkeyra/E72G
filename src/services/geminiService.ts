@@ -196,7 +196,6 @@ export async function callGemini(args: {
     'gemini-3.6-flash',
     (model && !model.includes('imagen') && !model.includes('preview')) ? model : 'gemini-3.6-flash',
     'gemini-2.5-flash',
-    'gemini-2.0-flash'
   ])).filter(Boolean);
 
   for (const targetModel of validMultimodalModels) {
@@ -303,7 +302,7 @@ export async function checkGeminiConnection(apiKeyOverride?: string): Promise<{ 
   const start = Date.now();
   try {
     const ai = createAiClient(apiKeyOverride);
-    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
     
     let lastResponse: GenerateContentResponse | null = null;
     for (const model of candidateModels) {
@@ -357,7 +356,7 @@ export async function analyzeImage(
   const promptText = `Role: You are a Structural Design Auditor. Define the artistic style as a JSON object. Focus on ${activeTab === "logo design" ? "LOGO DESIGN" : "GRAPHIC ILLUSTRATION"} elements.
 Return a JSON object: { "name": string, "basePrompt": string, "negativePrompt": string, "aspectRatio": "1:1", "dnaWeight": number, "textureIntensity": number }`;
 
-  const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+  const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
 
   for (const model of candidateModels) {
     try {
@@ -430,7 +429,7 @@ export async function refineTypographyPrompt(
     const ai = createAiClient(apiKey);
     const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
 
-    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
     for (const model of candidateModels) {
       try {
         const response: GenerateContentResponse = await ai.models.generateContent({
