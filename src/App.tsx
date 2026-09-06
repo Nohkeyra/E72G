@@ -410,6 +410,7 @@ export default function App() {
             setError(null);
             handleGenerate(undefined, true);
           }}
+          onOpenSettings={() => setShowSettings(true)}
         />
 
         <Suspense fallback={null}>

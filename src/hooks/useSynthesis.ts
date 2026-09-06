@@ -326,7 +326,7 @@ export function useSynthesis() {
       if (isRateLimit) {
         if (retryCount < 1) {
           addLog('Rate limit encountered. Waiting 5 seconds for cooldown before retrying...', 'process', undefined, '429');
-          setError('Please wait a moment... (cooldown in progress)');
+          setError('Google Gemini API rate limit cooldown in progress (retrying in 5s)...');
           setIsGenerating(false);
           isGeneratingRef.current = false;
           setTimeout(() => {
@@ -334,7 +334,7 @@ export function useSynthesis() {
           }, 5000);
           return;
         } else {
-          const friendlyRateLimitMsg = 'Rate limit reached. Please wait a moment before generating again.';
+          const friendlyRateLimitMsg = 'Google Gemini API rate limit reached (HTTP 429). The shared API key has exceeded Google\'s free quota. Please add your free personal Gemini API key in Settings (⚙) to generate without waiting.';
           addLog(friendlyRateLimitMsg, 'error', undefined, '429');
           setError(friendlyRateLimitMsg);
           setIsGenerating(false);

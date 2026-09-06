@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, KeyRound, Settings } from 'lucide-react';
 import { MOTION_PROFILE } from '../../lib/motion';
 
 interface SystemAlertProps {
@@ -8,9 +8,18 @@ interface SystemAlertProps {
   error: string;
   onClose: () => void;
   onRetry: () => void;
+  onOpenSettings?: () => void;
 }
 
-export const SystemAlert: React.FC<SystemAlertProps> = ({ isOpen, error, onClose, onRetry }) => {
+export const SystemAlert: React.FC<SystemAlertProps> = ({ isOpen, error, onClose, onRetry, onOpenSettings }) => {
+  const isKeyOrRateLimit = 
+    error.toLowerCase().includes('rate limit') || 
+    error.toLowerCase().includes('429') || 
+    error.toLowerCase().includes('quota') ||
+    error.toLowerCase().includes('resource_exhausted') ||
+    error.toLowerCase().includes('api key') ||
+    error.toLowerCase().includes('401');
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -46,7 +55,26 @@ export const SystemAlert: React.FC<SystemAlertProps> = ({ isOpen, error, onClose
                 <p className="text-sm text-text-primary font-medium leading-relaxed">
                   {error}
                 </p>
+                {isKeyOrRateLimit && (
+                  <p className="text-xs text-amber-400/90 font-mono pt-2 leading-relaxed bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/20">
+                    💡 <strong>Tip:</strong> The public shared Gemini API key has exceeded Google&apos;s request quota. Add your free Gemini API key in Settings to bypass this limit completely.
+                  </p>
+                )}
               </div>
+
+              {isKeyOrRateLimit && onOpenSettings && (
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenSettings();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-accent text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:opacity-90 transition-all shadow-lg active:scale-98"
+                >
+                  <KeyRound size={15} />
+                  <span>Open Settings & Add Free API Key</span>
+                  <Settings size={14} className="opacity-70" />
+                </button>
+              )}
 
               <div className="pt-2 flex gap-3">
                 <button
