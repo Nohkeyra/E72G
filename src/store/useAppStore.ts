@@ -127,7 +127,7 @@ export interface AppActions {
 
 export type AppStore = AppState & AppActions;
 
-const DEFAULT_GEMINI_KEY = 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo';
+const DEFAULT_GEMINI_KEY = 'AIzaSyDrVpqsExzVg7gBqIzDwVtF1K4yqUPq-Mg';
 
 export const useAppStore = create<AppStore>((set, get) => {
   // Non-reactive reference for generation sync

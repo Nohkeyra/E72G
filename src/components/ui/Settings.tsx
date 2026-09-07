@@ -29,6 +29,8 @@ interface SettingsProps {
   clearLogs: () => void;
 }
 
+const DEFAULT_FALLBACK_KEY = 'AIzaSyDrVpqsExzVg7gBqIzDwVtF1K4yqUPq-Mg';
+
 export const Settings: React.FC<SettingsProps> = ({
   onClose,
   addLog,
@@ -322,7 +324,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   <label className="text-[9px] font-bold uppercase tracking-[0.2em] text-text-secondary opacity-60">
                     Gemini API Key
                   </label>
-                  {geminiApiKey && geminiApiKey !== 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo' && (
+                  {geminiApiKey && geminiApiKey !== DEFAULT_FALLBACK_KEY && (
                     <button
                       onClick={() => {
                         if (setGeminiApiKey) setGeminiApiKey('');
@@ -338,13 +340,13 @@ export const Settings: React.FC<SettingsProps> = ({
                 <div className="relative group/input flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     type="password"
-                    value={geminiApiKey === 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo' ? '' : (geminiApiKey || '')}
+                    value={geminiApiKey === DEFAULT_FALLBACK_KEY ? '' : (geminiApiKey || '')}
                     onChange={(e) => {
                       const val = e.target.value.trim();
                       if (setGeminiApiKey) setGeminiApiKey(val);
                       if (setGeminiKeys) setGeminiKeys([val]);
                     }}
-                    placeholder="Paste AIzaSy... key here"
+                    placeholder="Enter API key here"
                     className="w-full bg-bg-primary/50 border border-border-primary rounded-xl px-4 py-3 text-xs font-mono text-blue-400 placeholder-blue-400/30 focus:outline-none focus:border-blue-500/60 transition-all shadow-inner"
                   />
                   <button
@@ -353,7 +355,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     onClick={async () => {
                       setIsTestingKey(true);
                       setKeyTestResult(null);
-                      const keyToTest = (geminiApiKey && geminiApiKey !== 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo') ? geminiApiKey : undefined;
+                      const keyToTest = (geminiApiKey && geminiApiKey !== DEFAULT_FALLBACK_KEY) ? geminiApiKey : undefined;
                       addLog('Testing Gemini API key connection...', 'process');
                       const result = await checkGeminiConnection(keyToTest);
                       setIsTestingKey(false);
@@ -383,9 +385,9 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 )}
                 <p className="text-[9px] text-text-secondary opacity-60 font-mono">
-                  {geminiApiKey && geminiApiKey !== 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo' 
+                  {geminiApiKey && geminiApiKey !== DEFAULT_FALLBACK_KEY 
                     ? '✓ Using custom Gemini API key' 
-                    : 'Currently using default shared fallback key. Paste your own free API key above to avoid quotas.'}
+                    : 'Currently using default fallback key.'}
                 </p>
               </div>
 

@@ -13,7 +13,7 @@ function normalizeAspectRatio(ratio?: string): AspectRatio {
   return '1:1';
 }
 
-const DEFAULT_GEMINI_KEY = 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo';
+const DEFAULT_GEMINI_KEY = 'AIzaSyDrVpqsExzVg7gBqIzDwVtF1K4yqUPq-Mg';
 
 /**
  * Clean API Key Retrieval
@@ -21,7 +21,7 @@ const DEFAULT_GEMINI_KEY = 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo';
 function getApiKey(apiKeyOverride?: string): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const key = apiKeyOverride || (process.env as any).GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY || DEFAULT_GEMINI_KEY;
-  if (!key || key === 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo') {
+  if (!key) {
     throw new Error("Gemini API key is required. Please tap Settings (gear icon) and enter your Gemini API key.");
   }
   return key;
@@ -133,7 +133,7 @@ export async function callGemini(args: {
   apiKeyOverride?: string;
   signal?: AbortSignal;
 }): Promise<{ image?: string; text?: string; modelUsed: string }> {
-  const { prompt, base64Image, mimeType, aspectRatio, apiKeyOverride } = args;
+  const { model, prompt, base64Image, mimeType, aspectRatio, apiKeyOverride } = args;
 
   const ai = createAiClient(apiKeyOverride);
   const selectedAspectRatio = normalizeAspectRatio(aspectRatio);
@@ -161,10 +161,12 @@ export async function callGemini(args: {
   }
 
   const targetModels = [
-    'gemini-2.5-flash-image',
+    model || 'gemini-3.1-flash-lite-image',
     'gemini-3.1-flash-lite-image',
-    'gemini-3.1-flash-image'
-  ];
+    'gemini-3.1-flash-image',
+    'gemini-3-pro-image',
+    'gemini-2.5-flash-image'
+  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
   for (const targetModel of targetModels) {
     try {
@@ -212,12 +214,7 @@ export async function callGemini(args: {
         throw new Error(`Invalid Gemini API key. Please check your key in Settings.`, { cause: error });
       }
 
-      if (msg.includes("429") || msg.includes("Quota") || msg.includes("RESOURCE_EXHAUSTED")) {
-        console.warn(`[GEMINI ENGINE] Rate limit (429) encountered on '${targetModel}'.`);
-        throw new Error("Free tier daily quota or rate limit reached. Please wait a moment before trying again.", { cause: error });
-      }
-
-      console.warn(`[GEMINI ENGINE] Model '${targetModel}' attempt issue: ${msg}. Trying next fallback...`);
+      console.warn(`[GEMINI ENGINE] Model '${targetModel}' attempt issue: ${msg}. Trying next model...`);
       continue;
     }
   }
@@ -248,7 +245,7 @@ export async function callGemini(args: {
   if (lastError) {
     const errorString = lastError instanceof Error ? lastError.message : String(lastError);
     if (errorString.includes("429") || errorString.includes("RESOURCE_EXHAUSTED") || errorString.includes("Rate limit")) {
-      throw new Error("Free tier daily quota or rate limit reached. Please wait a moment before trying again.");
+      throw new Error(`Google API Quota limit reached (429): Google's image generation models require active project billing quota. (${errorString.slice(0, 180)}...)`);
     }
     if (errorString.includes("401") || errorString.includes("invalid") || errorString.includes("API key not valid")) {
       throw new Error("Invalid Gemini API key. Please check your key in Settings.");

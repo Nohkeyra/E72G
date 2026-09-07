@@ -8,7 +8,7 @@ export interface GeminiAnalysisResult {
   objects: Array<{ id: string; label: string; pose_orientation: string; box_2d: [number, number, number, number] }>;
 }
 
-const DEFAULT_GEMINI_KEY = 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo';
+const DEFAULT_GEMINI_KEY = 'AIzaSyDrVpqsExzVg7gBqIzDwVtF1K4yqUPq-Mg';
 
 export async function analyzeImage(base64Image: string, mimeType: string, apiKeyOverride?: string, retries = 3, delay = 1000): Promise<GeminiAnalysisResult> {
   

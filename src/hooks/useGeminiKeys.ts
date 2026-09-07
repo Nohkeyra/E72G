@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { safeLocalStorage } from '../utils/storageUtils';
 
-const DEFAULT_GEMINI_KEY = 'AIzaSyCUvwDsFotH6xez4SqxfkKn27A1HJYunOo';
+const DEFAULT_GEMINI_KEY = 'AIzaSyDrVpqsExzVg7gBqIzDwVtF1K4yqUPq-Mg';
 
 export function useGeminiKeys() {
   const [geminiApiKey, setGeminiApiKey] = useState<string>(() => {
