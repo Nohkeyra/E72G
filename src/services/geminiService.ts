@@ -160,7 +160,11 @@ export async function callGemini(args: {
     parts.push({ text: prompt });
   }
 
-  const targetModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+  const targetModels = [
+    'gemini-2.5-flash-image',
+    'gemini-3.1-flash-lite-image',
+    'gemini-3.1-flash-image'
+  ];
 
   for (const targetModel of targetModels) {
     try {
@@ -171,7 +175,6 @@ export async function callGemini(args: {
           contents: { parts },
           config: {
             systemInstruction: VORTEX_SYSTEM_INSTRUCTION,
-            responseModalities: ["IMAGE", "TEXT"],
             imageConfig: {
               aspectRatio: selectedAspectRatio
             }
@@ -179,12 +182,13 @@ export async function callGemini(args: {
           } as any
         });
       } catch (modalityErr) {
-        console.warn(`[GEMINI ENGINE] Visual modality config on '${targetModel}' bypassed. Trying standard prompt...`, modalityErr);
+        console.warn(`[GEMINI ENGINE] imageConfig on '${targetModel}' warning. Trying with responseModalities...`, modalityErr);
         response = await ai.models.generateContent({
           model: targetModel,
           contents: { parts },
           config: {
-            systemInstruction: VORTEX_SYSTEM_INSTRUCTION
+            systemInstruction: VORTEX_SYSTEM_INSTRUCTION,
+            responseModalities: ["IMAGE", "TEXT"]
           }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
@@ -218,6 +222,29 @@ export async function callGemini(args: {
     }
   }
 
+  // Safety net: Try imagen-3.0-generate-002 if the user's key supports Imagen
+  try {
+    const imagenFallback = await ai.models.generateImages({
+      model: 'imagen-3.0-generate-002',
+      prompt: prompt,
+      config: {
+        numberOfImages: 1,
+        outputMimeType: 'image/jpeg',
+        aspectRatio: selectedAspectRatio,
+      }
+    });
+
+    if (imagenFallback.generatedImages?.[0]?.image?.imageBytes) {
+      const b64 = imagenFallback.generatedImages[0].image.imageBytes;
+      return {
+        image: `data:image/jpeg;base64,${b64}`,
+        modelUsed: 'imagen-3.0-generate-002'
+      };
+    }
+  } catch (imgErr) {
+    console.warn('[GEMINI ENGINE] Imagen 3 fallback also skipped:', imgErr);
+  }
+
   if (lastError) {
     const errorString = lastError instanceof Error ? lastError.message : String(lastError);
     if (errorString.includes("429") || errorString.includes("RESOURCE_EXHAUSTED") || errorString.includes("Rate limit")) {
@@ -229,7 +256,7 @@ export async function callGemini(args: {
     throw new Error(`Synthesis error: ${errorString}`);
   }
 
-  throw new Error("Gemini 3.6 Flash was unable to complete the image generation request.");
+  throw new Error("Gemini Image engine was unable to produce an image. Please verify your prompt or API key.");
 }
 
 /**
@@ -239,7 +266,7 @@ export async function checkGeminiConnection(apiKeyOverride?: string): Promise<{ 
   const start = Date.now();
   try {
     const ai = createAiClient(apiKeyOverride);
-    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-flash-image'];
     
     let lastResponse: GenerateContentResponse | null = null;
     for (const model of candidateModels) {
@@ -276,7 +303,7 @@ export async function checkGeminiConnection(apiKeyOverride?: string): Promise<{ 
 }
 
 /**
- * Image Structure Analysis using Gemini 2.5 Flash
+ * Image Structure Analysis using Gemini 3.8 Flash
  */
 export async function analyzeImage(
   base64Image: string, 
@@ -290,10 +317,20 @@ export async function analyzeImage(
   const ai = createAiClient(apiKeyOverride);
   const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
 
-  const promptText = `Role: You are a Structural Design Auditor. Define the artistic style as a JSON object. Focus on ${activeTab === "logo design" ? "LOGO DESIGN" : "GRAPHIC ILLUSTRATION"} elements.
+  const promptText = activeTab === 'vectorize'
+    ? `Role: You are a Vector Graphics & Visual Morphology Auditor. Analyze the uploaded reference image for precision 2D vectorization.
+Extract:
+1. "name": A concise vector style name (e.g. "Flat Geometric Vector", "Minimalist Dual-Tone Vector", "Modern Mascot Vector")
+2. "basePrompt": A descriptive, high-precision visual directive capturing the subject's exact silhouette, geometry, dominant forms, and flat color blocks for vector generation
+3. "negativePrompt": Elements to strictly avoid (photorealistic shading, grainy textures, realistic 3D volume, photo noise, complex gradients)
+4. "aspectRatio": "1:1"
+5. "dnaWeight": 95
+6. "textureIntensity": 0
+Return strict JSON: { "name": string, "basePrompt": string, "negativePrompt": string, "aspectRatio": "1:1", "dnaWeight": number, "textureIntensity": number }`
+    : `Role: You are a Structural Design Auditor. Define the artistic style as a JSON object. Focus on ${activeTab === "logo design" ? "LOGO DESIGN" : "GRAPHIC ILLUSTRATION"} elements.
 Return a JSON object: { "name": string, "basePrompt": string, "negativePrompt": string, "aspectRatio": "1:1", "dnaWeight": number, "textureIntensity": number }`;
 
-  const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+  const candidateModels = ['gemini-3.8-flash', 'gemini-2.5-flash'];
 
   for (const model of candidateModels) {
     try {
@@ -343,6 +380,62 @@ Return a JSON object: { "name": string, "basePrompt": string, "negativePrompt": 
 }
 
 /**
+ * Direct Vector Subject Analysis with Gemini 3.8 Flash
+ */
+export async function analyzeVectorSubject(
+  base64Image: string,
+  mimeType: string,
+  apiKeyOverride?: string
+): Promise<{ description: string; colors: string; shapes: string } | null> {
+  const ai = createAiClient(apiKeyOverride);
+  const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
+
+  const candidateModels = ['gemini-3.8-flash', 'gemini-2.5-flash'];
+
+  for (const model of candidateModels) {
+    try {
+      const response: GenerateContentResponse = await ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: formattedBase64,
+                mimeType: mimeType || 'image/png'
+              }
+            },
+            {
+              text: `Analyze this image for 2D vector conversion.
+Provide a concise breakdown formatted as:
+DESCRIPTION: [Describe the primary subject, pose, silhouette, and composition]
+COLORS: [List the 3-5 dominant colors in hex or clean color names]
+SHAPES: [List key geometric forms and outline characteristics]`
+            }
+          ]
+        }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      const text = response.text || "";
+      if (!text) continue;
+
+      const descMatch = text.match(/DESCRIPTION:\s*([^\n]+)/i);
+      const colorsMatch = text.match(/COLORS:\s*([^\n]+)/i);
+      const shapesMatch = text.match(/SHAPES:\s*([^\n]+)/i);
+
+      return {
+        description: descMatch ? descMatch[1].trim() : text.slice(0, 200),
+        colors: colorsMatch ? colorsMatch[1].trim() : "Flat solid palette",
+        shapes: shapesMatch ? shapesMatch[1].trim() : "Clean 2D vector paths"
+      };
+    } catch (err) {
+      console.warn(`[GEMINI 3.8 FLASH] Vector subject analysis notice on ${model}:`, err);
+    }
+  }
+  return null;
+}
+
+/**
  * Typography Prompt Refinement Loop using Gemini 2.5 Flash
  */
 export async function refineTypographyPrompt(
@@ -366,7 +459,7 @@ export async function refineTypographyPrompt(
     const ai = createAiClient(apiKey);
     const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
 
-    const candidateModels = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+    const candidateModels = ['gemini-2.5-flash', 'gemini-3.8-flash'];
     for (const model of candidateModels) {
       try {
         const response: GenerateContentResponse = await ai.models.generateContent({

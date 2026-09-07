@@ -4,7 +4,6 @@
   "type": "module",
   "description": "Professional vector design suite for logos and illustration synthesis.",
   "scripts": {
-    "predev": "node scripts/generate-pwa-assets.js",
     "dev": "tsx server.ts",
     "prebuild": "node scripts/generate-pwa-assets.js",
     "typecheck": "tsc --noEmit",

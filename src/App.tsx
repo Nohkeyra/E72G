@@ -232,7 +232,7 @@ export default function App() {
               <div className="p-4 space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar font-mono">
                 <div className="space-y-1">
                   <p className="text-[8px] text-white/30 uppercase tracking-widest">Active_Engine</p>
-                  <p className="text-[10px] text-yellow-500/80">Gemini (gemini-3.6-flash / imagen-4.0-generate-001)</p>
+                  <p className="text-[10px] text-yellow-500/80">Analysis: gemini-3.8-flash • Synthesis: gemini-2.5-flash-image</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[8px] text-white/30 uppercase tracking-widest">Raw_Synthesis_String</p>

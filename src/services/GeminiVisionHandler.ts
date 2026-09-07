@@ -25,7 +25,7 @@ export async function analyzeImage(base64Image: string, mimeType: string, apiKey
     const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.8-flash",
       contents: {
         parts: [
           {

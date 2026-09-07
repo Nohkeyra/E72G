@@ -5,7 +5,7 @@ import { GenerationContext } from '../types/generation';
 import { AspectRatio, Preset } from '../types/presets';
 import { validateModelCall } from '../services/modelValidator';
 import { generateImage } from '../services/imageService';
-import { analyzeImage } from '../services/geminiService';
+import { analyzeImage, analyzeVectorSubject } from '../services/geminiService';
 import { incrementGeminiQuota, checkQuota } from '../services/quotaUtils';
 import { formatForGeminiAttention, parsePromptWeights } from '../utils/promptUtils';
 import { ARTISTIC_MODIFIERS, GLOBAL_NEGATIVE_PROMPT } from '../lib/constants';
@@ -159,7 +159,7 @@ export function useSynthesis() {
 
     addLog('Starting image generation...', 'process');
     addLog('Analyzing prompt and style settings...', 'info');
-    setTimeout(() => addLog('Synthesizing image with Gemini Imagen engine...', 'info'), 1500);
+    setTimeout(() => addLog('Synthesizing image with Gemini 2.5 Flash Image engine...', 'info'), 1500);
 
     const currentModule = getModule(activeTab);
     
@@ -185,12 +185,32 @@ export function useSynthesis() {
 
     try {
       let finalPrompt = currentModule.constructPrompt(generationContext);
+
+      const currentKey = getActiveGeminiKey();
+
+      // In vectorize tab with an uploaded image: run Gemini 3.8 Flash analysis to ground synthesis
+      if (activeTab === 'vectorize' && uploadedImage) {
+        addLog('Analyzing image with Gemini 3.8 Flash...', 'process');
+        try {
+          const vectorAnalysis = await analyzeVectorSubject(
+            uploadedImage,
+            uploadedMimeType || 'image/png',
+            currentKey
+          );
+          if (vectorAnalysis) {
+            addLog(`Gemini 3.8 Flash Analysis complete.`, 'info');
+            finalPrompt += `\n\n## GEMINI 3.8 FLASH VISION AUDIT:\n- Subject Morphology: ${vectorAnalysis.description}\n- Dominant Color Palette: ${vectorAnalysis.colors}\n- Vector Outline: ${vectorAnalysis.shapes}\nDIRECTIVE: Recreate this subject as clean, flat 2D vector art with solid fills and sharp paths.`;
+          }
+        } catch (visionErr) {
+          console.warn('Pre-synthesis vision analysis skipped:', visionErr);
+        }
+      }
+
       setLastFinalPrompt(finalPrompt);
 
       addDebugLog('handleGenerate: starting generation');
-      addLog('Synthesizing visual asset with Gemini...', 'info');
+      addLog('Synthesizing visual asset with Gemini 2.5 Flash Image...', 'info');
       
-      const currentKey = getActiveGeminiKey();
       const modelInfo = validateModelCall(selectedModel, !!currentKey);
       
       checkQuota(!!currentKey);
