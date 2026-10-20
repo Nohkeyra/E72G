@@ -1,4 +1,4 @@
-name: Build Debug APK
+Name: Build Debug APK
 
 on:
   push:
@@ -54,8 +54,6 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: latest
 
       - name: Install required SDK platform & build-tools
         shell: bash
@@ -63,6 +61,7 @@ jobs:
           set -euxo pipefail
 
           export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 
           if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
@@ -71,9 +70,8 @@ jobs:
             exit 1
           fi
 
-          yes | sdkmanager --licenses || true
-          sdkmanager --sdk_root="$ANDROID_HOME" --install \
-            "cmdline-tools;latest" \
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
@@ -95,3 +93,4 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
           if-no-files-found: error
+          
