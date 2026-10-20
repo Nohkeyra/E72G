@@ -157,9 +157,9 @@ export function useSynthesis() {
       }
     }, timeoutDuration);
 
-    addLog('Starting image generation...', 'process');
-    addLog('Analyzing prompt and style settings...', 'info');
-    setTimeout(() => addLog('Synthesizing image with Gemini 2.5 Flash Image engine...', 'info'), 1500);
+    addLog('Starting visual synthesis...', 'process');
+    addLog('Compiling prompt and style DNA...', 'info');
+    setTimeout(() => addLog('Synthesizing image with Gemini Image engine...', 'info'), 1500);
 
     const currentModule = getModule(activeTab);
     
@@ -209,7 +209,7 @@ export function useSynthesis() {
       setLastFinalPrompt(finalPrompt);
 
       addDebugLog('handleGenerate: starting generation');
-      addLog('Synthesizing visual asset with Gemini 2.5 Flash Image...', 'info');
+      addLog('Synthesizing visual asset with Gemini Image Engine...', 'info');
       
       const modelInfo = validateModelCall(selectedModel, !!currentKey);
       

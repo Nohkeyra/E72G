@@ -46,22 +46,32 @@ export function useSystem() {
       addLog('No result image available for download.', 'error');
       return;
     }
-    const promptText = userInput.substring(0, 30).replace(/[^a-z0-9]/gi, '_');
+    const promptText = userInput.substring(0, 30).replace(/[^a-z0-9]/gi, '_') || 'design';
     const presetName = selectedPreset?.name.replace(/[^a-z0-9]/gi, '_') || 'default';
+
+    const getExtension = (src: string) => {
+      if (src.startsWith('data:image/svg')) return 'svg';
+      if (src.startsWith('data:image/jpeg') || src.startsWith('data:image/jpg')) return 'jpg';
+      if (src.startsWith('data:image/webp')) return 'webp';
+      return 'png';
+    };
     
     if (Array.isArray(resultImage)) {
       resultImage.forEach((img, i) => {
+        const ext = getExtension(img);
         const link = document.createElement('a');
         link.href = img;
-        link.download = `${activeTab}_${presetName}_${promptText}_var${i + 1}_${Date.now()}.png`;
+        link.download = `${activeTab}_${presetName}_${promptText}_var${i + 1}_${Date.now()}.${ext}`;
         link.click();
       });
       addLog('Downloading all variations...', 'info');
     } else {
+      const ext = getExtension(resultImage);
       const link = document.createElement('a');
       link.href = resultImage;
-      link.download = `${activeTab}_${presetName}_${promptText}_${Date.now()}.png`;
+      link.download = `${activeTab}_${presetName}_${promptText}_${Date.now()}.${ext}`;
       link.click();
+      addLog(`Downloaded asset as .${ext.toUpperCase()}`, 'success');
     }
   };
 

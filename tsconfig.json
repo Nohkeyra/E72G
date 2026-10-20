@@ -30,6 +30,7 @@
   },
   "include": [
     "src",
+    "server.ts",
     "server/**/*.ts",
     "vite.config.ts",
     "capacitor.config.ts"

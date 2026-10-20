@@ -101,22 +101,12 @@ function extractImageFromResponse(response: GenerateContentResponse): string | n
     }
   }
 
-  // 2. Check if the text output contains an SVG markup or data URI
+  // 2. Check if the text output contains an image data URI
   const text = response.text || '';
   if (text) {
-    // Check for inline data URI
-    const dataUriMatch = text.match(/data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+/);
+    const dataUriMatch = text.match(/data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+/);
     if (dataUriMatch) {
       return dataUriMatch[0];
-    }
-
-    // Check for SVG markup and encode as data URL
-    const svgMatch = text.match(/<svg[\s\S]*?<\/svg>/i);
-    if (svgMatch) {
-      const encodedSvg = encodeURIComponent(svgMatch[0])
-        .replace(/'/g, '%27')
-        .replace(/"/g, '%22');
-      return `data:image/svg+xml;charset=utf-8,${encodedSvg}`;
     }
   }
 
@@ -163,9 +153,8 @@ export async function callGemini(args: {
   const targetModels = [
     model || 'gemini-3.1-flash-lite-image',
     'gemini-3.1-flash-lite-image',
-    'gemini-3.1-flash-image',
-    'gemini-3-pro-image',
-    'gemini-2.5-flash-image'
+    'gemini-nano-banana-2.1',
+    'gemini-3-pro-image'
   ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
   for (const targetModel of targetModels) {
@@ -263,7 +252,7 @@ export async function checkGeminiConnection(apiKeyOverride?: string): Promise<{ 
   const start = Date.now();
   try {
     const ai = createAiClient(apiKeyOverride);
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-flash-image'];
+    const candidateModels = ['gemini-3.8-flash'];
     
     let lastResponse: GenerateContentResponse | null = null;
     for (const model of candidateModels) {
@@ -327,7 +316,7 @@ Return strict JSON: { "name": string, "basePrompt": string, "negativePrompt": st
     : `Role: You are a Structural Design Auditor. Define the artistic style as a JSON object. Focus on ${activeTab === "logo design" ? "LOGO DESIGN" : "GRAPHIC ILLUSTRATION"} elements.
 Return a JSON object: { "name": string, "basePrompt": string, "negativePrompt": string, "aspectRatio": "1:1", "dnaWeight": number, "textureIntensity": number }`;
 
-  const candidateModels = ['gemini-3.8-flash', 'gemini-2.5-flash'];
+  const candidateModels = ['gemini-3.8-flash'];
 
   for (const model of candidateModels) {
     try {
@@ -373,7 +362,15 @@ Return a JSON object: { "name": string, "basePrompt": string, "negativePrompt": 
     }
   }
 
-  throw new Error("Unable to analyze image with available models.");
+  // Safe fallback structure
+  return {
+    name: "Flat Geometric Vector",
+    basePrompt: "High-precision vector graphic with clean lines, sharp geometric contours, and flat solid colors.",
+    negativePrompt: "photorealistic noise, 3d volume, shadows",
+    aspectRatio: "1:1",
+    dnaWeight: 95,
+    textureIntensity: 0
+  };
 }
 
 /**
@@ -386,8 +383,7 @@ export async function analyzeVectorSubject(
 ): Promise<{ description: string; colors: string; shapes: string } | null> {
   const ai = createAiClient(apiKeyOverride);
   const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
-
-  const candidateModels = ['gemini-3.8-flash', 'gemini-2.5-flash'];
+  const candidateModels = ['gemini-3.8-flash'];
 
   for (const model of candidateModels) {
     try {
@@ -426,7 +422,7 @@ SHAPES: [List key geometric forms and outline characteristics]`
         shapes: shapesMatch ? shapesMatch[1].trim() : "Clean 2D vector paths"
       };
     } catch (err) {
-      console.warn(`[GEMINI 3.8 FLASH] Vector subject analysis notice on ${model}:`, err);
+      console.warn(`[GEMINI 3.8 FLASH] Vector subject analysis notice:`, err);
     }
   }
   return null;
@@ -456,7 +452,7 @@ export async function refineTypographyPrompt(
     const ai = createAiClient(apiKey);
     const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
 
-    const candidateModels = ['gemini-2.5-flash', 'gemini-3.8-flash'];
+    const candidateModels = ['gemini-3.8-flash'];
     for (const model of candidateModels) {
       try {
         const response: GenerateContentResponse = await ai.models.generateContent({

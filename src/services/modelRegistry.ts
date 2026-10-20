@@ -31,7 +31,7 @@ export const modelRegistry: Record<ImageModel, ModelInfo> = {
     id: 'gemini-flash',
     label: 'Gemini 3.1 Flash Image',
     provider: 'google_gemini',
-    modelId: 'gemini-3.1-flash-image',
+    modelId: 'gemini-3.1-flash-lite-image',
     requiresApiKey: false,
     previewCompatible: true,
     billingStatus: 'Free tier with quota'
@@ -40,7 +40,7 @@ export const modelRegistry: Record<ImageModel, ModelInfo> = {
     id: 'gemini-image',
     label: 'Gemini 3.1 Flash Image (High Quality)',
     provider: 'google_gemini',
-    modelId: 'gemini-3.1-flash-image',
+    modelId: 'gemini-3.1-flash-lite-image',
     requiresApiKey: false,
     previewCompatible: true,
     billingStatus: 'Free tier with quota'

@@ -245,6 +245,19 @@ async function startServer() {
     }
   });
 
+  // Explicit service worker endpoint with proper headers
+  app.get("/sw.js", (req, res) => {
+    const swPath = path.join(process.cwd(), "public", "sw.js");
+    if (fs.existsSync(swPath)) {
+      res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Service-Worker-Allowed", "/");
+      res.sendFile(swPath);
+    } else {
+      res.status(404).send("Not found");
+    }
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({

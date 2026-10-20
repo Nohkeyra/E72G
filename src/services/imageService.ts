@@ -27,30 +27,28 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
           );
           finalBase64 = croppedBaseUrl.split(',')[1] || croppedBaseUrl;
           finalMimeType = 'image/jpeg';
-          } catch (cropErr) {
-            console.warn("Frontend canvas crop failed, attempting backend fallback:", cropErr);
-            if (typeof window !== 'undefined' && window.location.origin.includes('.run.app')) {
-              try {
-                const prepRes = await fetch("/api/prepare-reference", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    sourceImagePath: preset.sourceImagePath,
-                    referenceImagePath: preset.referenceImagePath || preset.previewImagePath,
-                    cropBox: preset.cropBox
-                  }),
-                  signal
-                });
-                if (prepRes.ok) {
-                  const data = await prepRes.json();
-                  finalBase64 = data.base64;
-                  finalMimeType = data.mimeType;
-                }
-              } catch (apiErr) {
-                console.warn("API fallback skipped in current environment:", apiErr);
-              }
+        } catch (cropErr) {
+          console.warn("Frontend canvas crop failed, attempting backend fallback:", cropErr);
+          try {
+            const prepRes = await fetch("/api/prepare-reference", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sourceImagePath: preset.sourceImagePath,
+                referenceImagePath: preset.referenceImagePath || preset.previewImagePath,
+                cropBox: preset.cropBox
+              }),
+              signal
+            });
+            if (prepRes.ok) {
+              const data = await prepRes.json();
+              finalBase64 = data.base64;
+              finalMimeType = data.mimeType;
             }
+          } catch (apiErr) {
+            console.warn("API fallback skipped in current environment:", apiErr);
           }
+        }
       } else {
         const imgPath = preset.referenceImagePath || preset.previewImagePath;
         if (imgPath) {
@@ -75,7 +73,7 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
           }
 
           // 2. Fallback to API if client-side didn't resolve base64 and server API is available
-          if (!finalBase64 && typeof window !== 'undefined' && window.location.origin.includes('.run.app')) {
+          if (!finalBase64) {
             try {
               const prepRes = await fetch("/api/prepare-reference", {
                 method: "POST",
@@ -102,19 +100,18 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
       console.warn("Failed to prepare reference image:", e);
     }
   } else if (finalBase64 && preset?.cropBox) {
-      // If user provided a base64 image and a crop box is selected somehow
-      try {
-          const croppedBaseUrl = await cropImage(
-              finalBase64.startsWith('data:') ? finalBase64 : `data:${finalMimeType || 'image/jpeg'};base64,${finalBase64}`,
-              preset.cropBox,
-              'image/jpeg',
-              0.95
-          );
-          finalBase64 = croppedBaseUrl.split(',')[1] || croppedBaseUrl;
-          finalMimeType = 'image/jpeg';
-      } catch (e) {
-          console.warn("Failed to crop user base64 image:", e);
-      }
+    try {
+      const croppedBaseUrl = await cropImage(
+        finalBase64.startsWith('data:') ? finalBase64 : `data:${finalMimeType || 'image/jpeg'};base64,${finalBase64}`,
+        preset.cropBox,
+        'image/jpeg',
+        0.95
+      );
+      finalBase64 = croppedBaseUrl.split(',')[1] || croppedBaseUrl;
+      finalMimeType = 'image/jpeg';
+    } catch (e) {
+      console.warn("Failed to crop user base64 image:", e);
+    }
   }
 
   // 3. Synthesis Call
