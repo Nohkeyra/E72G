@@ -24,6 +24,15 @@ export interface GenerationContext {
   isSimplifiedMode?: boolean;
   activeTab?: string;
   isVisualFidelity?: boolean;
+  vectorAnalysis?: {
+    subjectName?: string;
+    description?: string;
+    silhouette?: string;
+    distinctiveDetails?: string;
+    colors?: string;
+    shapes?: string;
+    vectorAdvice?: string;
+  };
 }
 
 export interface ModuleStrategy {

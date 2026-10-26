@@ -141,6 +141,16 @@ export async function analyzeImage(
   return data;
 }
 
+export interface VectorAnalysisResult {
+  subjectName?: string;
+  description: string;
+  silhouette?: string;
+  distinctiveDetails?: string;
+  colors: string;
+  shapes: string;
+  vectorAdvice?: string;
+}
+
 /**
  * Direct Vector Subject Analysis via Backend Route
  */
@@ -148,7 +158,7 @@ export async function analyzeVectorSubject(
   base64Image: string,
   mimeType: string,
   apiKeyOverride?: string
-): Promise<{ description: string; colors: string; shapes: string } | null> {
+): Promise<VectorAnalysisResult | null> {
   try {
     const url = apiUrl("/api/gemini/analyze-vector");
     const headers = getApiHeaders(apiKeyOverride);

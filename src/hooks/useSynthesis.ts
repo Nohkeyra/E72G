@@ -56,6 +56,14 @@ export function useSynthesis() {
     activeTab: '' as Tab,
     userInput: ''
   });
+  const cachedVectorAnalysisRef = useRef<{
+    imageKey: string | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    analysis: any;
+  }>({
+    imageKey: null,
+    analysis: null
+  });
 
   const addDebugLog = useCallback((msg: string) => {
     if (showDebug) addLog(`[DEBUG] ${msg}`, 'info');
@@ -168,7 +176,35 @@ export function useSynthesis() {
     setTimeout(() => addLog(`Synthesizing image with ${engineLabel} engine...`, 'info'), 1500);
 
     const currentModule = getModule(activeTab);
-    
+    const currentKey = getActiveGeminiKey();
+
+    // In vectorize tab with an uploaded image: run or reuse Gemini 3.8 Flash analysis to identify and ground the subject
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let vectorAnalysisData: any = null;
+    if (activeTab === 'vectorize' && uploadedImage) {
+      const imageKey = `${uploadedImage.slice(0, 100)}_${uploadedImage.length}`;
+      if (cachedVectorAnalysisRef.current.imageKey === imageKey && cachedVectorAnalysisRef.current.analysis) {
+        vectorAnalysisData = cachedVectorAnalysisRef.current.analysis;
+        addLog(`[VORTEX] Using cached subject morphology for "${vectorAnalysisData.subjectName || 'reference'}".`, 'info');
+      } else {
+        addLog('Analyzing reference image with Gemini 3.8 Flash...', 'process');
+        try {
+          vectorAnalysisData = await analyzeVectorSubject(
+            uploadedImage,
+            uploadedMimeType || 'image/png',
+            currentKey
+          );
+          if (vectorAnalysisData) {
+            cachedVectorAnalysisRef.current = { imageKey, analysis: vectorAnalysisData };
+            addLog(`Subject analyzed: ${vectorAnalysisData.subjectName || 'Subject identified'}`, 'success');
+          }
+        } catch (visionErr) {
+          console.warn('Pre-synthesis vision analysis skipped:', visionErr);
+          addLog('Proceeding with direct image-to-image synthesis...', 'info');
+        }
+      }
+    }
+
     const generationContext: GenerationContext = {
       prompt,
       preset: { ...presetToUse, aspectRatio: selectedAspectRatio as AspectRatio },
@@ -179,6 +215,7 @@ export function useSynthesis() {
       selectedModel: selectedModel,
       isFastTrack,
       isSimplifiedMode: simplified,
+      vectorAnalysis: vectorAnalysisData,
       // Tab-specific fields
       ...(activeTab === 'logo design' ? {
         logoType: selectedLogoType,
@@ -191,27 +228,6 @@ export function useSynthesis() {
 
     try {
       let finalPrompt = currentModule.constructPrompt(generationContext);
-
-      const currentKey = getActiveGeminiKey();
-
-      // In vectorize tab with an uploaded image: run Gemini 3.8 Flash analysis to ground synthesis
-      if (activeTab === 'vectorize' && uploadedImage) {
-        addLog('Analyzing image with Gemini 3.8 Flash...', 'process');
-        try {
-          const vectorAnalysis = await analyzeVectorSubject(
-            uploadedImage,
-            uploadedMimeType || 'image/png',
-            currentKey
-          );
-          if (vectorAnalysis) {
-            addLog(`Gemini 3.8 Flash Analysis complete.`, 'info');
-            finalPrompt += `\n\n## GEMINI 3.8 FLASH VISION AUDIT:\n- Subject Morphology: ${vectorAnalysis.description}\n- Dominant Color Palette: ${vectorAnalysis.colors}\n- Vector Outline: ${vectorAnalysis.shapes}\nDIRECTIVE: Recreate this subject as clean, flat 2D vector art with solid fills and sharp paths.`;
-          }
-        } catch (visionErr) {
-          console.warn('Pre-synthesis vision analysis skipped:', visionErr);
-        }
-      }
-
       setLastFinalPrompt(finalPrompt);
 
       addDebugLog('handleGenerate: starting generation');

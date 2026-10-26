@@ -453,6 +453,9 @@ test("Cloudflare: executeCloudflareEditImage sends multipart form payload with n
     assert.equal(interceptedBody.get("prompt")?.toString().includes("Refine logo colors"), true);
     assert.equal(interceptedBody.get("width"), "1024");
     assert.equal(interceptedBody.get("height"), "1024");
+    assert.ok(interceptedBody.get("image") !== null);
+    assert.ok(interceptedBody.get("image_0") !== null);
+    assert.ok(interceptedBody.get("image_1") !== null);
     assert.equal(interceptedBody.get("num_steps"), null);
     assert.equal(interceptedBody.get("steps"), null);
   } finally {

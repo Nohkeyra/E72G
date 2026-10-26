@@ -251,8 +251,14 @@ export async function executeGenerateImage(params: {
         mimeType
       }
     });
+
+    const isSubjectPreservation = prompt.includes("[SUBJECT_PRESERVATION_DIRECTIVE]") || prompt.includes("[IDENTITY_LOCK");
+    const instructionText = isSubjectPreservation
+      ? `[SUBJECT_REFERENCE_GROUND_TRUTH]: The attached image is the primary visual subject. Preserve this exact subject's identity, silhouette, proportions, pose, structure, and distinctive features while translating it into the requested vector art style.\n[TRANSFORMATION_INSTRUCTIONS]: ${prompt}`
+      : `[STYLE_REFERENCE_DETECTED] Follow the visual DNA of the attached reference image.\n[CONTENT_INSTRUCTION]: ${prompt}`;
+
     parts.push({
-      text: `[STYLE_REFERENCE_DETECTED] Follow the visual DNA of the attached reference image.\n[CONTENT_INSTRUCTION]: ${prompt}`
+      text: instructionText
     });
   } else {
     parts.push({ text: prompt });
@@ -450,11 +456,21 @@ Return a JSON object: { "name": string, "basePrompt": string, "negativePrompt": 
   return parseJson(text);
 }
 
+export interface VectorAnalysisResult {
+  subjectName: string;
+  description: string;
+  silhouette: string;
+  distinctiveDetails: string;
+  colors: string;
+  shapes: string;
+  vectorAdvice: string;
+}
+
 export async function executeAnalyzeVector(params: {
   base64Image: string;
   mimeType: string;
   apiKey: string;
-}): Promise<{ description: string; colors: string; shapes: string } | null> {
+}): Promise<VectorAnalysisResult | null> {
   const { base64Image, mimeType, apiKey } = params;
   const ai = createAiClient(apiKey);
   const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
@@ -470,11 +486,18 @@ export async function executeAnalyzeVector(params: {
           }
         },
         {
-          text: `Analyze this image for 2D vector conversion.
-Provide a concise breakdown formatted as:
-DESCRIPTION: [Describe the primary subject, pose, silhouette, and composition]
-COLORS: [List the 3-5 dominant colors in hex or clean color names]
-SHAPES: [List key geometric forms and outline characteristics]`
+          text: `You are an expert Vector Art & Visual Morphology Auditor.
+Analyze this reference image to prepare it for intelligent 2D vector-style illustration generation.
+Extract the subject's exact visual morphology so the generative model can faithfully preserve it.
+
+Provide a breakdown formatted strictly as:
+SUBJECT: [Concise 2-6 word identification of the primary subject, e.g. "standing bulldog with spiked collar" or "vintage red sports coupe"]
+DESCRIPTION: [Accurate description of the subject's pose, orientation, proportions, and placement in the frame]
+SILHOUETTE: [Detailed outline and outer contour description, proportions, posture, and spatial composition]
+DETAILS: [Crucial distinctive features, component counts, emblems, markings, or textures that define the subject's identity and must be preserved]
+COLORS: [3 to 5 dominant colors and their relationship, e.g. "Crimson red body, gloss black trim, chrome accents, charcoal background"]
+SHAPES: [Geometric primitives, curve dynamics, and outline boundary rules]
+VECTOR_ADVICE: [Instructions on translating this subject into clean vector planes, smooth bezier contours, and solid or cel-shaded fills without photographic noise]`
         }
       ]
     }
@@ -484,14 +507,43 @@ SHAPES: [List key geometric forms and outline characteristics]`
   const text = response.text || "";
   if (!text) return null;
 
+  // Support both JSON output (if model formatted as JSON) and KEY: VALUE lines
+  let parsedJson: Partial<VectorAnalysisResult> = {};
+  try {
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch && jsonMatch[1]) {
+      parsedJson = JSON.parse(jsonMatch[1].trim());
+    } else if (text.trim().startsWith("{") && text.trim().endsWith("}")) {
+      parsedJson = JSON.parse(text.trim());
+    }
+  } catch {
+    // Non-JSON response, continue with regex parsing
+  }
+
+  const subjectMatch = text.match(/SUBJECT(?:_NAME)?:\s*([^\n]+)/i);
   const descMatch = text.match(/DESCRIPTION:\s*([^\n]+)/i);
-  const colorsMatch = text.match(/COLORS:\s*([^\n]+)/i);
-  const shapesMatch = text.match(/SHAPES:\s*([^\n]+)/i);
+  const silMatch = text.match(/SILHOUETTE(?:_AND_CONTOURS)?:\s*([^\n]+)/i);
+  const detailsMatch = text.match(/(?:DISTINCTIVE_)?DETAILS:\s*([^\n]+)/i);
+  const colorsMatch = text.match(/COLORS(?:_PALETTE)?:\s*([^\n]+)/i);
+  const shapesMatch = text.match(/SHAPES(?:_AND_GEOMETRY)?:\s*([^\n]+)/i);
+  const adviceMatch = text.match(/VECTOR_ADVICE:\s*([^\n]+)/i);
+
+  const subjectName = parsedJson.subjectName || (subjectMatch ? subjectMatch[1].trim() : "the reference subject");
+  const silhouette = parsedJson.silhouette || (silMatch ? silMatch[1].trim() : "Accurate subject contour and proportions");
+  const distinctiveDetails = parsedJson.distinctiveDetails || (detailsMatch ? detailsMatch[1].trim() : "Core identifying features and structure");
+  const colors = parsedJson.colors || (colorsMatch ? colorsMatch[1].trim() : "Cohesive flat palette");
+  const shapes = parsedJson.shapes || (shapesMatch ? shapesMatch[1].trim() : "Clean 2D vector paths");
+  const vectorAdvice = parsedJson.vectorAdvice || (adviceMatch ? adviceMatch[1].trim() : "Render with crisp bezier curves and solid color blocking");
+  const description = parsedJson.description || (descMatch ? descMatch[1].trim() : `${subjectName}. ${silhouette}`);
 
   return {
-    description: descMatch ? descMatch[1].trim() : text.slice(0, 200),
-    colors: colorsMatch ? colorsMatch[1].trim() : "Flat solid palette",
-    shapes: shapesMatch ? shapesMatch[1].trim() : "Clean 2D vector paths"
+    subjectName,
+    description,
+    silhouette,
+    distinctiveDetails,
+    colors,
+    shapes,
+    vectorAdvice
   };
 }
 

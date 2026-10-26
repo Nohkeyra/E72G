@@ -73,10 +73,15 @@ export function buildCloudflarePrompt(prompt: string, aspectRatio?: string): str
 
   // 2. Compact vision audit & section headers (e.g., from automatic Vectorize image analysis)
   cleanPrompt = cleanPrompt
-    .replace(/## GEMINI 3.8 FLASH VISION AUDIT:\s*/gi, "Vision Audit: ")
-    .replace(/\n*-\s*Subject Morphology:\s*/gi, " Subject: ")
-    .replace(/\n*-\s*Dominant Color Palette:\s*/gi, " Colors: ")
-    .replace(/\n*-\s*Vector Outline:\s*/gi, " Shapes: ")
+    .replace(/## (?:GEMINI [0-9.]+ FLASH )?VISION AUDIT:\s*/gi, "Vision Audit: ")
+    .replace(/## SUBJECT MORPHOLOGY & REFERENCE ANCHORS:\s*/gi, "Anchors: ")
+    .replace(/\n*-\s*Subject (?:Morphology|Identification):\s*/gi, " Subject: ")
+    .replace(/\n*-\s*Pose & Structure:\s*/gi, " Pose: ")
+    .replace(/\n*-\s*Silhouette & Contours:\s*/gi, " Silhouette: ")
+    .replace(/\n*-\s*Distinctive Details[^:]*:\s*/gi, " Details: ")
+    .replace(/\n*-\s*Dominant Color Palette:\s*|\n*-\s*Color Scheme:\s*/gi, " Colors: ")
+    .replace(/\n*-\s*Vector Outline:\s*|\n*-\s*Geometric & Line Architecture:\s*/gi, " Shapes: ")
+    .replace(/\n*-\s*Vector Translation Guide:\s*/gi, " Vector Guide: ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -334,12 +339,14 @@ export async function executeCloudflareEditImage(
     throw new Error(`Unsupported or corrupted reference image format: ${msg}`);
   }
 
-  // 4. Build multipart/form-data payload for FLUX.2 [klein] 4B
+  // 4. Build multipart/form-data payload for FLUX.2 [klein] 4B with robust multi-reference fields
   const { width, height } = getDimensionsForAspectRatio(aspectRatio);
   const formData = new FormData();
   formData.append("prompt", finalPrompt);
 
   const imageBlob = new Blob([new Uint8Array(processedBuffer)], { type: verifiedMime });
+  formData.append("image", imageBlob, "reference_image.png");
+  formData.append("image_0", imageBlob, "reference_image.png");
   formData.append("image_1", imageBlob, "reference_image.png");
   formData.append("width", String(width));
   formData.append("height", String(height));
@@ -373,6 +380,36 @@ export async function executeCloudflareEditImage(
         signal: controller.signal
       });
       clearTimeout(timeoutId);
+
+      // Emit sanitized diagnostic logging
+      try {
+        const origMeta = await sharp(inputBuffer).metadata().catch(() => ({ width: 0, height: 0, format: "unknown" }));
+        const procMeta = await sharp(processedBuffer).metadata().catch(() => ({ width: 0, height: 0, format: "unknown" }));
+        const diagMeta = {
+          requestId: `cf_req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+          provider: "cloudflare",
+          modelUsed: "@cf/black-forest-labs/flux-2-klein-4b",
+          hasReference: true,
+          editEndpointSelected: true,
+          before: {
+            width: origMeta.width || 0,
+            height: origMeta.height || 0,
+            mimeType: origMeta.format || "unknown",
+            byteSize: inputBuffer.length
+          },
+          after: {
+            width: procMeta.width || 0,
+            height: procMeta.height || 0,
+            mimeType: verifiedMime,
+            byteSize: processedBuffer.length
+          },
+          imageInputIncluded: true,
+          httpStatus: response.status
+        };
+        console.log("[Cloudflare Diagnostics]", JSON.stringify(diagMeta));
+      } catch (logErr) {
+        console.warn("Failed to emit Cloudflare diagnostics log:", logErr);
+      }
 
       if (response.ok || response.status === 400 || response.status === 401 || response.status === 403) {
         break; // Non-retryable status or success

@@ -171,7 +171,13 @@ export const SynthesisControls: React.FC<SynthesisControlsProps> = React.memo(({
             ref={textareaRef}
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
-            placeholder="Describe what you want to create..."
+            placeholder={
+              activeTab === 'vectorize'
+                ? (uploadedImage
+                    ? "Optional: Add vector styling instructions or leave blank to faithfully preserve subject..."
+                    : "Upload an image to vectorize, or describe the vector artwork to create...")
+                : "Describe what you want to create..."
+            }
             className="w-full bg-transparent p-4 text-sm font-sans focus:outline-none resize-none h-16 placeholder:text-text-secondary/60 text-text-primary font-medium"
           />
 
