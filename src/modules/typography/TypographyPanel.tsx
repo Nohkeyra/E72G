@@ -9,6 +9,7 @@ import {
   Target
 } from 'lucide-react';
 import { MOTION_PROFILE } from '../../lib/motion';
+import { ProviderSelector } from '../../components/ui/ProviderSelector';
 
 // Image Fallback Component
 const PresetImage: React.FC<{ src: string; name: string }> = ({ src, name }) => {
@@ -119,6 +120,9 @@ export const TypographyPanel: React.FC<TypographyPanelProps> = React.memo(({
 
   return (
     <div className="space-y-6 pb-24">
+      {/* Provider Selector */}
+      <ProviderSelector hasReferenceImage={Boolean(selectedPreset?.referenceImagePath || selectedPreset?.previewImagePath)} />
+
       {/* Input Area */}
       <motion.div 
         initial={{ opacity: 0, y: 10 }}

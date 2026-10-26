@@ -14,9 +14,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss()],
     define: {
       "import.meta.env.VITE_API_URL": JSON.stringify(env.VITE_API_URL || ""),
-      "process.env.VITE_API_URL": JSON.stringify(env.VITE_API_URL || ""),
-      "process.env.GEMINI_API_KEY": JSON.stringify(process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || ""),
-      "process.env.API_KEY": JSON.stringify(process.env.API_KEY || env.API_KEY || "")
+      "process.env.VITE_API_URL": JSON.stringify(env.VITE_API_URL || "")
     },
     resolve: {
       alias: {

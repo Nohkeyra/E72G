@@ -2,59 +2,56 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import sharp from "sharp";
+import { fetchSafeImage } from "./server/ssrfValidator";
+import { createRateLimiter } from "./server/rateLimiter";
+import {
+  resolveApiKey,
+  executeGenerateImage,
+  executeVerifyKey,
+  executeAnalyze,
+  executeAnalyzeVector,
+  executeRefineTypography,
+  executeVisionAnalysis,
+  handleGeminiError,
+  ALLOWED_IMAGE_MODELS
+} from "./server/geminiBackend";
+import { executeCloudflareGenerateImage } from "./server/cloudflareBackend";
 
 async function ensurePremiumPwaAssets() {
-  const publicDir = path.join(process.cwd(), 'public');
+  const publicDir = path.join(process.cwd(), "public");
   if (!fs.existsSync(publicDir)) {
     fs.mkdirSync(publicDir, { recursive: true });
   }
 
-  const svgPath = path.join(publicDir, 'icon.svg');
-  const icon192Path = path.join(publicDir, 'icon-192.png');
-  const icon512Path = path.join(publicDir, 'icon-512.png');
-  const maskablePath = path.join(publicDir, 'maskable-icon-512.png');
-  const screenshotDesktopPath = path.join(publicDir, 'screenshot-desktop.png');
-  const screenshotMobilePath = path.join(publicDir, 'screenshot-mobile.png');
+  const svgPath = path.join(publicDir, "icon.svg");
+  const icon192Path = path.join(publicDir, "icon-192.png");
+  const icon512Path = path.join(publicDir, "icon-512.png");
+  const maskablePath = path.join(publicDir, "maskable-icon-512.png");
+  const screenshotDesktopPath = path.join(publicDir, "screenshot-desktop.png");
+  const screenshotMobilePath = path.join(publicDir, "screenshot-mobile.png");
 
   if (fs.existsSync(svgPath)) {
     try {
-      // 1. Generate 192x192 launcher icon
       if (!fs.existsSync(icon192Path)) {
-        await sharp(svgPath)
-          .resize(192, 192)
-          .png()
-          .toFile(icon192Path);
-        console.log('Successfully generated icon-192.png');
+        await sharp(svgPath).resize(192, 192).png().toFile(icon192Path);
+        console.log("Successfully generated icon-192.png");
       }
-
-      // 2. Generate 512x512 launcher icon  
       if (!fs.existsSync(icon512Path)) {
-        await sharp(svgPath)
-          .resize(512, 512)
-          .png()
-          .toFile(icon512Path);
-        console.log('Successfully generated icon-512.png');
+        await sharp(svgPath).resize(512, 512).png().toFile(icon512Path);
+        console.log("Successfully generated icon-512.png");
       }
-
-      // 3. Generate perfect maskable icon
       if (!fs.existsSync(maskablePath)) {
         await sharp(svgPath)
-          .resize(512, 512, {
-            fit: 'contain',
-            background: '#09090B'
-          })
+          .resize(512, 512, { fit: "contain", background: "#09090B" })
           .png()
           .toFile(maskablePath);
-        console.log('Successfully generated maskable-icon-512.png');
+        console.log("Successfully generated maskable-icon-512.png");
       }
     } catch (err) {
-      console.error('Error generating icons:', err);
+      console.error("Error generating icons:", err);
     }
-  } else {
-    console.warn('icon.svg not found, skipping icon generation');
   }
 
-  // 4. Generate Desktop Screenshot PNG
   if (!fs.existsSync(screenshotDesktopPath)) {
     const desktopSvg = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" width="1280" height="800">
@@ -90,20 +87,15 @@ async function ensurePremiumPwaAssets() {
   <text x="340" y="733" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" fill="#71717A">Type brand instruction or design directive...</text>
   <rect x="1110" y="704" width="120" height="46" rx="6" fill="#FFFFFF"/>
   <text x="1170" y="732" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="bold" font-size="14" fill="#09090B" text-anchor="middle">Synthesize</text>
-</svg>
-    `.trim();
-
+</svg>`.trim();
     try {
-      await sharp(Buffer.from(desktopSvg))
-        .png()
-        .toFile(screenshotDesktopPath);
-      console.log('Successfully generated screenshot-desktop.png');
+      await sharp(Buffer.from(desktopSvg)).png().toFile(screenshotDesktopPath);
+      console.log("Successfully generated screenshot-desktop.png");
     } catch (err) {
-      console.error('Error generating desktop screenshot:', err);
+      console.error("Error generating desktop screenshot:", err);
     }
   }
 
-  // 5. Generate Mobile Screenshot PNG
   if (!fs.existsSync(screenshotMobilePath)) {
     const mobileSvg = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1280" width="720" height="1280">
@@ -129,119 +121,350 @@ async function ensurePremiumPwaAssets() {
   <text x="60" y="1058" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" fill="#71717A">Select active reference or command...</text>
   <rect x="30" y="1156" width="660" height="64" rx="12" fill="#FFFFFF"/>
   <text x="360" y="1195" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="bold" font-size="18" fill="#09090B" text-anchor="middle">Generate Intelligent Design</text>
-</svg>
-    `.trim();
-
+</svg>`.trim();
     try {
-      await sharp(Buffer.from(mobileSvg))
-        .png()
-        .toFile(screenshotMobilePath);
-      console.log('Successfully generated screenshot-mobile.png');
+      await sharp(Buffer.from(mobileSvg)).png().toFile(screenshotMobilePath);
+      console.log("Successfully generated screenshot-mobile.png");
     } catch (err) {
-      console.error('Error generating mobile screenshot:', err);
+      console.error("Error generating mobile screenshot:", err);
     }
   }
 }
 
-async function startServer() {
-  ensurePremiumPwaAssets().catch(err => console.warn('PWA asset check:', err));
+export function createApp() {
   const app = express();
-  const PORT = 3000;
 
+  // CORS middleware supporting Web and Capacitor Android APK
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    // Allow Capacitor mobile origins and standard web origins
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    } else {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-gemini-api-key, Authorization");
+    res.setHeader("Access-Control-Max-Age", "86400");
+
+    if (req.method === "OPTIONS") {
+      return res.status(204).end();
+    }
+    next();
+  });
+
+  // Request limits
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   // Static serving for the library
-  app.use("/Elite_72_Library_Organized", express.static(path.join(process.cwd(), 'Elite_72_Library_Organized')));
+  app.use("/Elite_72_Library_Organized", express.static(path.join(process.cwd(), "Elite_72_Library_Organized")));
 
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+  // Rate limiter for expensive operations (60 requests/minute)
+  const apiLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 60,
+    message: "Rate limit reached. Please wait a moment before sending more requests."
   });
 
-  // This endpoint prepares the reference image data (cropping if needed)
-  // and returns it in a format the frontend Gemini SDK can use.
-  app.post("/api/prepare-reference", async (req, res) => {
+  // 1. Health check (reports if server-side key or Cloudflare credentials are available)
+  app.get("/api/health", (req, res) => {
+    res.json({
+      status: "ok",
+      hasDefaultKey: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()),
+      hasCloudflareConfigured: Boolean(
+        process.env.CLOUDFLARE_ACCOUNT_ID &&
+        process.env.CLOUDFLARE_ACCOUNT_ID.trim() &&
+        process.env.CLOUDFLARE_API_TOKEN &&
+        process.env.CLOUDFLARE_API_TOKEN.trim()
+      )
+    });
+  });
+
+  // Cloudflare Workers AI FLUX.1 [schnell] Image Generation
+  app.post("/api/cloudflare/generate-image", apiLimiter, async (req, res) => {
+    const { prompt, aspectRatio } = req.body || {};
     try {
-      const { referenceImagePath, sourceImagePath, cropBox } = req.body;
-      
-      const libraryDir = path.join(process.cwd(), 'Elite_72_Library_Organized');
+      const result = await executeCloudflareGenerateImage({ prompt, aspectRatio });
+      return res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Cloudflare image generation failed";
+      const status = message.includes("429") || message.includes("quota") ? 429 : 500;
+      return res.status(status).json({ error: message });
+    }
+  });
+
+  // 2. Prepare reference with strict SSRF protection and path traversal protection
+  app.post("/api/prepare-reference", apiLimiter, async (req, res) => {
+    try {
+      const { referenceImagePath, sourceImagePath, cropBox } = req.body || {};
+      const libraryDir = path.join(process.cwd(), "Elite_72_Library_Organized");
       const allowedBaseDir = path.resolve(libraryDir);
 
       let finalBase64 = "";
       let finalMimeType = "";
 
       if (cropBox && sourceImagePath) {
-        const cleanSourcePath = (sourceImagePath || '').split('?')[0].replace(/\\/g, '/');
-        const imgPathRel = path.join(libraryDir, cleanSourcePath.replace(/^\/?Elite_72_Library_Organized\//, ''));
+        if (typeof sourceImagePath !== "string") {
+          return res.status(400).json({ error: "Invalid sourceImagePath parameter" });
+        }
+
+        const cleanSourcePath = sourceImagePath.split("?")[0].replace(/\\/g, "/");
+        const imgPathRel = path.join(libraryDir, cleanSourcePath.replace(/^\/?Elite_72_Library_Organized\//, ""));
         const resolvedPath = path.resolve(imgPathRel);
 
         if (!resolvedPath.startsWith(allowedBaseDir)) {
-           return res.status(403).json({ error: "Access denied" });
+          return res.status(403).json({ error: "Access denied: Path outside allowed directory" });
         }
         if (!fs.existsSync(resolvedPath)) {
           return res.status(404).json({ error: "Source image not found" });
         }
 
         const { x, y, width, height } = cropBox;
+        if (typeof x !== "number" || typeof y !== "number" || typeof width !== "number" || typeof height !== "number") {
+          return res.status(400).json({ error: "Invalid cropBox parameters" });
+        }
+
         const imageMetadata = await sharp(resolvedPath).metadata();
         if (!imageMetadata.width || !imageMetadata.height) {
-           return res.status(500).json({ error: "Failed to read dimensions" });
+          return res.status(500).json({ error: "Failed to read image dimensions" });
         }
 
         const safeX = Math.min(Math.max(0, Math.round(x)), imageMetadata.width - 1);
         const safeY = Math.min(Math.max(0, Math.round(y)), imageMetadata.height - 1);
-        const safeWidth = Math.min(Math.round(width), imageMetadata.width - safeX);
-        const safeHeight = Math.min(Math.round(height), imageMetadata.height - safeY);
+        const safeWidth = Math.min(Math.max(1, Math.round(width)), imageMetadata.width - safeX);
+        const safeHeight = Math.min(Math.max(1, Math.round(height)), imageMetadata.height - safeY);
 
         const croppedBuffer = await sharp(resolvedPath)
           .extract({ left: safeX, top: safeY, width: safeWidth, height: safeHeight })
           .png()
           .toBuffer();
-          
-        finalBase64 = croppedBuffer.toString('base64');
-        finalMimeType = 'image/png';
-      } else if (referenceImagePath) {
-        let imagePathExt = referenceImagePath;
-        let fileData: Buffer;
-        let resolvedPathForExt = "";
 
-        if (imagePathExt.startsWith('http://') || imagePathExt.startsWith('https://')) {
-          const res = await fetch(imagePathExt);
-          if (!res.ok) throw new Error("Failed to fetch reference image: " + res.statusText);
-          const arrayBuffer = await res.arrayBuffer();
-          fileData = Buffer.from(arrayBuffer);
-          resolvedPathForExt = imagePathExt;
+        finalBase64 = croppedBuffer.toString("base64");
+        finalMimeType = "image/png";
+      } else if (referenceImagePath) {
+        if (typeof referenceImagePath !== "string") {
+          return res.status(400).json({ error: "Invalid referenceImagePath parameter" });
+        }
+
+        let fileData: Buffer;
+        let mime = "image/jpeg";
+
+        if (referenceImagePath.startsWith("http://") || referenceImagePath.startsWith("https://")) {
+          // SSRF-safe remote image fetch
+          try {
+            const fetched = await fetchSafeImage(referenceImagePath, {
+              maxBytes: 20 * 1024 * 1024,
+              timeoutMs: 10000,
+              maxRedirects: 3
+            });
+            fileData = fetched.buffer;
+            mime = fetched.contentType;
+          } catch (ssrfErr) {
+            console.warn(`[SSRF BLOCKED] fetchSafeImage rejected '${referenceImagePath}':`, ssrfErr instanceof Error ? ssrfErr.message : ssrfErr);
+            return res.status(400).json({
+              error: `Remote reference fetch failed: ${ssrfErr instanceof Error ? ssrfErr.message : "Blocked destination"}`
+            });
+          }
         } else {
-          const cleanRefPath = (referenceImagePath || '').split('?')[0].replace(/\\/g, '/');
-          imagePathExt = path.join(libraryDir, cleanRefPath.replace(/^\/?Elite_72_Library_Organized\//, ''));
+          // Local library asset path
+          const cleanRefPath = referenceImagePath.split("?")[0].replace(/\\/g, "/");
+          const imagePathExt = path.join(libraryDir, cleanRefPath.replace(/^\/?Elite_72_Library_Organized\//, ""));
           const resolvedPath = path.resolve(imagePathExt);
+
           if (!resolvedPath.startsWith(allowedBaseDir)) {
-             return res.status(403).json({ error: "Access denied" });
+            return res.status(403).json({ error: "Access denied: Path outside allowed directory" });
           }
           if (!fs.existsSync(resolvedPath)) {
-            console.error("Reference file not found at:", resolvedPath);
-            return res.status(404).json({ error: "Reference not found" });
+            return res.status(404).json({ error: "Reference file not found" });
           }
+
           fileData = fs.readFileSync(resolvedPath);
-          resolvedPathForExt = resolvedPath;
+          const ext = path.extname(resolvedPath).toLowerCase();
+          if (ext === ".png") mime = "image/png";
+          else if (ext === ".webp") mime = "image/webp";
+          else if (ext === ".gif") mime = "image/gif";
+          else mime = "image/jpeg";
         }
-        
-        finalBase64 = fileData.toString('base64');
-        
-        const ext = path.extname(resolvedPathForExt).split('?')[0].toLowerCase();
-        if (ext === '.jpg' || ext === '.jpeg') finalMimeType = 'image/jpeg';
-        else if (ext === '.png') finalMimeType = 'image/png';
-        else if (ext === '.webp') finalMimeType = 'image/webp';
-        else finalMimeType = 'image/jpeg';
+
+        finalBase64 = fileData.toString("base64");
+        finalMimeType = mime;
       } else {
         return res.status(400).json({ error: "Missing reference parameters" });
       }
 
       res.json({ base64: finalBase64, mimeType: finalMimeType });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Preparation Error:", error);
-      res.status(500).json({ error: error.message || "Failed to prepare reference" });
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to prepare reference" });
+    }
+  });
+
+  // 3. Centralized Gemini Image Generation
+  app.post("/api/gemini/generate", apiLimiter, async (req, res) => {
+    const { key, isPersonal } = resolveApiKey(req);
+    const { model, prompt, base64Image, mimeType, aspectRatio } = req.body || {};
+
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return res.status(400).json({ error: "Prompt is required and must be a non-empty string" });
+    }
+
+    if (prompt.length > 10000) {
+      return res.status(400).json({ error: "Prompt exceeds maximum allowed length of 10,000 characters" });
+    }
+
+    if (model && typeof model === "string" && !ALLOWED_IMAGE_MODELS.has(model)) {
+      return res.status(400).json({ error: `Model '${model}' is not in the allowed models list.` });
+    }
+
+    if (base64Image && (typeof base64Image !== "string" || base64Image.length > 35 * 1024 * 1024)) {
+      return res.status(400).json({ error: "base64Image payload exceeds maximum size limit" });
+    }
+
+    if (!key) {
+      return res.status(503).json({
+        error: "Gemini API key is not configured on the server. Please add your personal Gemini API key in Settings (⚙)."
+      });
+    }
+
+    try {
+      const result = await executeGenerateImage({
+        model,
+        prompt: prompt.trim(),
+        base64Image,
+        mimeType,
+        aspectRatio,
+        apiKey: key,
+        isPersonal
+      });
+
+      return res.json(result);
+    } catch (err) {
+      const sanitized = handleGeminiError(err, isPersonal);
+      return res.status(sanitized.status).json({ error: sanitized.message });
+    }
+  });
+
+  // 4. API Key Verification / Diagnostics
+  app.post("/api/gemini/verify-key", apiLimiter, async (req, res) => {
+    const { key, isPersonal } = resolveApiKey(req);
+    const result = await executeVerifyKey(key, isPersonal);
+    res.json(result);
+  });
+
+  // 5. Image Style DNA Analysis
+  app.post("/api/gemini/analyze", apiLimiter, async (req, res) => {
+    const { key, isPersonal } = resolveApiKey(req);
+    const { base64Image, mimeType, activeTab } = req.body || {};
+
+    if (!base64Image || typeof base64Image !== "string") {
+      return res.status(400).json({ error: "base64Image is required for analysis" });
+    }
+
+    if (!key) {
+      return res.status(503).json({
+        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
+      });
+    }
+
+    try {
+      const result = await executeAnalyze({
+        base64Image,
+        mimeType: mimeType || "image/png",
+        activeTab: activeTab || "vectorize",
+        apiKey: key
+      });
+      res.json(result);
+    } catch (err) {
+      const sanitized = handleGeminiError(err, isPersonal);
+      res.status(sanitized.status).json({ error: sanitized.message });
+    }
+  });
+
+  // 6. Vector Subject Breakdown
+  app.post("/api/gemini/analyze-vector", apiLimiter, async (req, res) => {
+    const { key, isPersonal } = resolveApiKey(req);
+    const { base64Image, mimeType } = req.body || {};
+
+    if (!base64Image || typeof base64Image !== "string") {
+      return res.status(400).json({ error: "base64Image is required" });
+    }
+
+    if (!key) {
+      return res.status(503).json({
+        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
+      });
+    }
+
+    try {
+      const result = await executeAnalyzeVector({
+        base64Image,
+        mimeType: mimeType || "image/png",
+        apiKey: key
+      });
+      res.json(result);
+    } catch (err) {
+      const sanitized = handleGeminiError(err, isPersonal);
+      res.status(sanitized.status).json({ error: sanitized.message });
+    }
+  });
+
+  // 7. Typography Prompt Refinement
+  app.post("/api/gemini/refine-typography", apiLimiter, async (req, res) => {
+    const { key, isPersonal } = resolveApiKey(req);
+    const { base64Image, mimeType, originalPrompt, targetText, targetPreset } = req.body || {};
+
+    if (!base64Image || typeof base64Image !== "string") {
+      return res.status(400).json({ error: "base64Image is required" });
+    }
+
+    if (!key) {
+      return res.status(503).json({
+        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
+      });
+    }
+
+    try {
+      const result = await executeRefineTypography({
+        base64Image,
+        mimeType: mimeType || "image/png",
+        originalPrompt: originalPrompt || "",
+        targetText: targetText || "",
+        targetPreset: targetPreset || "",
+        apiKey: key
+      });
+      res.json(result);
+    } catch (err) {
+      const sanitized = handleGeminiError(err, isPersonal);
+      res.status(sanitized.status).json({ error: sanitized.message });
+    }
+  });
+
+  // 8. Vision Object Detection
+  app.post("/api/gemini/vision-analysis", apiLimiter, async (req, res) => {
+    const { key, isPersonal } = resolveApiKey(req);
+    const { base64Image, mimeType } = req.body || {};
+
+    if (!base64Image || typeof base64Image !== "string") {
+      return res.status(400).json({ error: "base64Image is required" });
+    }
+
+    if (!key) {
+      return res.status(503).json({
+        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
+      });
+    }
+
+    try {
+      const result = await executeVisionAnalysis({
+        base64Image,
+        mimeType: mimeType || "image/png",
+        apiKey: key
+      });
+      res.json(result);
+    } catch (err) {
+      const sanitized = handleGeminiError(err, isPersonal);
+      res.status(sanitized.status).json({ error: sanitized.message });
     }
   });
 
@@ -258,27 +481,35 @@ async function startServer() {
     }
   });
 
+  return app;
+}
+
+async function startServer() {
+  ensurePremiumPwaAssets().catch((err) => console.warn("PWA asset check:", err));
+  const app = createApp();
+  const PORT = 3000;
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: "spa"
     });
-    app.use(express.static(path.join(process.cwd(), 'public')));
+    app.use(express.static(path.join(process.cwd(), "public")));
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.use(express.static(path.join(process.cwd(), 'public')));
-    app.get('*all', (req, res, next) => {
-      if (req.originalUrl.startsWith('/api/') || req.originalUrl.startsWith('/Elite_72_Library_Organized/')) {
+    app.use(express.static(path.join(process.cwd(), "public")));
+    app.get("*all", (req, res, next) => {
+      if (req.originalUrl.startsWith("/api/") || req.originalUrl.startsWith("/Elite_72_Library_Organized/")) {
         return next();
       }
-      const indexPath = path.join(distPath, 'index.html');
+      const indexPath = path.join(distPath, "index.html");
       if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
-        res.status(404).send('Application build in progress. Please refresh shortly.');
+        res.status(404).send("Application build in progress. Please refresh shortly.");
       }
     });
   }
@@ -288,4 +519,14 @@ async function startServer() {
   });
 }
 
-startServer();
+const isDirectExecution = Boolean(
+  process.env.NODE_ENV !== "test" &&
+  process.argv[1] &&
+  (process.argv[1].endsWith("server.ts") ||
+   process.argv[1].endsWith("server.cjs") ||
+   process.argv[1].endsWith("server.js"))
+);
+
+if (isDirectExecution) {
+  startServer();
+}

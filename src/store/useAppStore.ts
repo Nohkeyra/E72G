@@ -127,8 +127,6 @@ export interface AppActions {
 
 export type AppStore = AppState & AppActions;
 
-const DEFAULT_GEMINI_KEY = 'AIzaSyDrVpqsExzVg7gBqIzDwVtF1K4yqUPq-Mg';
-
 export const useAppStore = create<AppStore>((set, get) => {
   // Non-reactive reference for generation sync
   const isGeneratingRef = { current: false };
@@ -192,22 +190,17 @@ export const useAppStore = create<AppStore>((set, get) => {
     // Gemini Single API Key
     geminiApiKey: (() => {
       const saved = safeLocalStorage.getItem('geminiApiKey') || safeLocalStorage.getItem('geminiKey');
-      if (saved) return saved;
+      if (saved && typeof saved === 'string') return saved.trim();
       const savedKeys = safeLocalStorage.getItem('geminiKeys');
       const parsedKeys = safeJSONParse<string[]>(savedKeys, [''], 'geminiKeys');
-      if (parsedKeys[0]) return parsedKeys[0];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY || (typeof process !== 'undefined' ? (process.env as any).GEMINI_API_KEY : '') || DEFAULT_GEMINI_KEY;
+      return (parsedKeys[0] && typeof parsedKeys[0] === 'string') ? parsedKeys[0].trim() : '';
     })(),
     geminiKeys: (() => {
       const saved = safeLocalStorage.getItem('geminiApiKey') || safeLocalStorage.getItem('geminiKey');
-      if (saved) return [saved];
+      if (saved && typeof saved === 'string' && saved.trim()) return [saved.trim()];
       const savedKeys = safeLocalStorage.getItem('geminiKeys');
       const parsed = safeJSONParse<string[]>(savedKeys, [''], 'geminiKeys');
-      if (parsed[0]) return parsed;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY || (typeof process !== 'undefined' ? (process.env as any).GEMINI_API_KEY : '') || DEFAULT_GEMINI_KEY;
-      return [envKey];
+      return (parsed[0] && typeof parsed[0] === 'string' && parsed[0].trim()) ? [parsed[0].trim()] : [];
     })(),
     activeKeyIndex: 0,
 
@@ -347,18 +340,36 @@ export const useAppStore = create<AppStore>((set, get) => {
     // Gemini Key Actions
     setGeminiApiKey: (key: string) => {
       const trimmed = key.trim();
-      safeLocalStorage.setItem('geminiApiKey', trimmed);
-      set({ 
-        geminiApiKey: trimmed,
-        geminiKeys: [trimmed],
-        activeKeyIndex: 0
-      });
+      if (trimmed) {
+        safeLocalStorage.setItem('geminiApiKey', trimmed);
+        set({ 
+          geminiApiKey: trimmed,
+          geminiKeys: [trimmed],
+          activeKeyIndex: 0
+        });
+      } else {
+        safeLocalStorage.removeItem('geminiApiKey');
+        safeLocalStorage.removeItem('geminiKey');
+        safeLocalStorage.removeItem('geminiKeys');
+        set({
+          geminiApiKey: '',
+          geminiKeys: [],
+          activeKeyIndex: 0
+        });
+      }
     },
     setGeminiKeys: (geminiKeys) => {
-      const primaryKey = geminiKeys[0] || '';
-      safeLocalStorage.setItem('geminiApiKey', primaryKey);
-      safeLocalStorage.setItem('geminiKeys', JSON.stringify(geminiKeys));
-      set({ geminiApiKey: primaryKey, geminiKeys });
+      const primaryKey = (geminiKeys[0] || '').trim();
+      if (primaryKey) {
+        safeLocalStorage.setItem('geminiApiKey', primaryKey);
+        safeLocalStorage.setItem('geminiKeys', JSON.stringify(geminiKeys));
+        set({ geminiApiKey: primaryKey, geminiKeys: [primaryKey] });
+      } else {
+        safeLocalStorage.removeItem('geminiApiKey');
+        safeLocalStorage.removeItem('geminiKey');
+        safeLocalStorage.removeItem('geminiKeys');
+        set({ geminiApiKey: '', geminiKeys: [] });
+      }
     },
     setActiveKeyIndex: (activeKeyIndex) => {
       set({ activeKeyIndex });
@@ -368,11 +379,10 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (geminiApiKey && typeof geminiApiKey === 'string' && geminiApiKey.trim()) {
         return geminiApiKey.trim();
       }
-      if (geminiKeys && geminiKeys[0] && geminiKeys[0].trim()) {
+      if (geminiKeys && geminiKeys[0] && typeof geminiKeys[0] === 'string' && geminiKeys[0].trim()) {
         return geminiKeys[0].trim();
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY || (typeof process !== 'undefined' ? (process.env as any).GEMINI_API_KEY : '') || DEFAULT_GEMINI_KEY;
+      return '';
     },
     switchToNextKey: () => {
       return false;

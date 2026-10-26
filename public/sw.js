@@ -39,6 +39,9 @@ self.addEventListener('fetch', (event) => {
   if (
     request.method !== 'GET' ||
     url.pathname.startsWith('/api/') ||
+    url.pathname.includes('/api/') ||
+    request.headers.has('x-gemini-api-key') ||
+    request.headers.has('authorization') ||
     url.pathname.includes('@vite') ||
     url.pathname.includes('@id')
   ) {

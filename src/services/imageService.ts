@@ -2,22 +2,71 @@
 import { resolveModelRoute } from './modelRegistry';
 import { callGemini } from './geminiService';
 import { cropImage } from './imageUtils';
+import { apiUrl } from '../utils/apiBase';
 
 export const generateImage = async (params: any, signal?: AbortSignal) => {
-  const { modelId, prompt, base64Image, negativePrompt, preset, apiKeyOverride } = params;
+  const { modelId, prompt, base64Image, negativePrompt, preset, apiKeyOverride, providerOverride } = params;
   
-  // 1. Model Routing
-  const registryEntry = resolveModelRoute(modelId);
-  const actualModelId = registryEntry?.modelId || modelId;
+  // 1. Model Routing & Provider Selection
+  const effectiveModelId = providerOverride === 'cloudflare' ? 'cf-flux' : (modelId || 'cf-flux');
+  const registryEntry = resolveModelRoute(effectiveModelId);
 
-  // 2. Prepare reference image if needed
+  const isCloudflare = registryEntry.provider === 'cloudflare' || providerOverride === 'cloudflare';
+
+  // 2. Reference image presence check
+  const hasReference = Boolean(
+    base64Image ||
+    preset?.sourceImagePath ||
+    preset?.referenceImagePath ||
+    preset?.previewImagePath
+  );
+
+  // 3. Guardrail: Cloudflare FLUX does not support reference-image editing
+  if (isCloudflare && hasReference) {
+    throw new Error(
+      "Cloudflare FLUX.1 [schnell] is a text-to-image model and does not support reference-image editing or variation. Please switch provider to Gemini Image or remove the reference image to proceed."
+    );
+  }
+
+  // 4. Cloudflare Execution Path
+  if (isCloudflare) {
+    const finalPrompt = buildFinalPrompt(prompt, negativePrompt);
+    const cfRes = await fetch(apiUrl("/api/cloudflare/generate-image"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: finalPrompt,
+        aspectRatio: preset?.aspectRatio
+      }),
+      signal
+    });
+
+    if (!cfRes.ok) {
+      const errData = await cfRes.json().catch(() => ({}));
+      throw new Error(
+        errData.error || `Cloudflare image generation failed with HTTP status ${cfRes.status}`
+      );
+    }
+
+    const cfData = await cfRes.json();
+    if (!cfData.image) {
+      throw new Error("Cloudflare did not return image data");
+    }
+
+    return {
+      image: cfData.image,
+      provider: 'cloudflare',
+      modelUsed: cfData.model || '@cf/black-forest-labs/flux-1-schnell'
+    };
+  }
+
+  // 5. Google Gemini Execution Path
   let finalBase64 = base64Image;
   let finalMimeType = params.mimeType;
 
   if (!finalBase64 && (preset?.sourceImagePath || preset?.referenceImagePath || preset?.previewImagePath)) {
     try {
       if (preset.cropBox && preset.sourceImagePath) {
-        // Frontend Image Processing Engine: crop directly via Canvas
         try {
           const croppedBaseUrl = await cropImage(
             preset.sourceImagePath,
@@ -30,7 +79,7 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
         } catch (cropErr) {
           console.warn("Frontend canvas crop failed, attempting backend fallback:", cropErr);
           try {
-            const prepRes = await fetch("/api/prepare-reference", {
+            const prepRes = await fetch(apiUrl("/api/prepare-reference"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -52,7 +101,6 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
       } else {
         const imgPath = preset.referenceImagePath || preset.previewImagePath;
         if (imgPath) {
-          // 1. First try client-side fetch (works in Android APK and Web directly)
           try {
             const res = await fetch(imgPath, { signal });
             if (res.ok) {
@@ -72,10 +120,9 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
             console.warn("Client-side image fetch failed, attempting API fallback:", clientFetchErr);
           }
 
-          // 2. Fallback to API if client-side didn't resolve base64 and server API is available
           if (!finalBase64) {
             try {
-              const prepRes = await fetch("/api/prepare-reference", {
+              const prepRes = await fetch(apiUrl("/api/prepare-reference"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -114,9 +161,10 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
     }
   }
 
-  // 3. Synthesis Call
+  const actualGeminiModel = registryEntry.provider === 'google_gemini' ? registryEntry.modelId : 'gemini-3.1-flash-lite-image';
+
   const result = await callGemini({
-    model: actualModelId,
+    model: actualGeminiModel,
     prompt: buildFinalPrompt(prompt, negativePrompt),
     base64Image: finalBase64,
     mimeType: finalMimeType,

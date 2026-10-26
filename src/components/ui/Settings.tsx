@@ -29,8 +29,6 @@ interface SettingsProps {
   clearLogs: () => void;
 }
 
-const DEFAULT_FALLBACK_KEY = 'AIzaSyDrVpqsExzVg7gBqIzDwVtF1K4yqUPq-Mg';
-
 export const Settings: React.FC<SettingsProps> = ({
   onClose,
   addLog,
@@ -218,7 +216,17 @@ export const Settings: React.FC<SettingsProps> = ({
               </div>
 
               <div className="space-y-3">
-                <label className="text-[9px] font-bold uppercase tracking-[0.2em] text-text-secondary opacity-60 ml-1">Public_Backend_URL</label>
+                <div className="flex justify-between items-center px-1">
+                  <label className="text-[9px] font-bold uppercase tracking-[0.2em] text-text-secondary opacity-60 ml-1">Public_Backend_URL</label>
+                  {publicBackendUrl && (
+                    <button
+                      onClick={() => setPublicBackendUrl('')}
+                      className="text-[9px] text-accent/70 hover:text-accent font-mono"
+                    >
+                      [RESET_TO_DEFAULT]
+                    </button>
+                  )}
+                </div>
                 <div className="relative group/input">
                   <input
                     type="url"
@@ -229,6 +237,9 @@ export const Settings: React.FC<SettingsProps> = ({
                   />
                   <div className="absolute top-0 left-0 w-1 h-full bg-accent/20 rounded-l-xl group-focus-within/input:bg-accent transition-colors" />
                 </div>
+                <p className="text-[8px] text-text-secondary opacity-70 font-mono leading-relaxed ml-1">
+                  Web preview and local dev resolve automatically via relative /api paths. For Capacitor Android APK builds, specify the HTTPS endpoint of your deployed server.
+                </p>
               </div>
             </div>
 
@@ -301,10 +312,18 @@ export const Settings: React.FC<SettingsProps> = ({
           >
             <div className="bg-accent/5 border border-accent/20 rounded-xl p-4 mb-2">
               <div className="flex items-start gap-3">
-                <AlertCircle size={16} className="text-accent shrink-0 mt-0.5" />
-                <p className="text-[10px] text-text-secondary leading-relaxed font-mono">
-                  <span className="text-accent font-bold">PROVISIONING_PROTOCOL:</span> Insert your own provider credentials below to bypass shared limits and use your personal accounts for generation.
-                </p>
+                <Shield size={16} className="text-accent shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[10px] text-text-primary font-bold font-mono">
+                    GEMINI_API_KEY_MANAGEMENT
+                  </p>
+                  <p className="text-[9px] text-text-secondary leading-relaxed font-mono">
+                    By default, requests use the application-owned default key configured in the backend environment. You can provide your own personal Gemini API key below to bypass shared quotas. Personal keys take precedence over the default.
+                  </p>
+                  <p className="text-[8px] text-amber-400/90 font-mono pt-1">
+                    Security Notice: Personal keys are stored locally in browser localStorage (unencrypted and accessible to same-origin scripts) and sent to the backend proxy via encrypted HTTP headers. Never share untrusted devices.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -315,38 +334,39 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-blue-400 flex items-center gap-2 font-mono">
-                  <Sparkles size={14} /> Gemini_API_Configuration
+                  <Sparkles size={14} /> Personal_Gemini_API_Key
                 </h3>
               </div>
               
               <div className="space-y-3">
                 <div className="flex justify-between items-center px-1">
                   <label className="text-[9px] font-bold uppercase tracking-[0.2em] text-text-secondary opacity-60">
-                    Gemini API Key
+                    Personal API Key (Optional)
                   </label>
-                  {geminiApiKey && geminiApiKey !== DEFAULT_FALLBACK_KEY && (
+                  {geminiApiKey && geminiApiKey.trim() !== '' && (
                     <button
                       onClick={() => {
                         if (setGeminiApiKey) setGeminiApiKey('');
-                        if (setGeminiKeys) setGeminiKeys(['']);
-                        addLog('API key cleared. Defaulting to shared key.', 'info');
+                        if (setGeminiKeys) setGeminiKeys([]);
+                        setKeyTestResult(null);
+                        addLog('Personal API key cleared. Restoring application default key.', 'info');
                       }}
-                      className="text-[9px] text-red-500 hover:text-red-400 font-mono"
+                      className="text-[9px] text-red-500 hover:text-red-400 font-mono font-bold"
                     >
-                      [CLEAR_CUSTOM_KEY]
+                      [CLEAR_PERSONAL_KEY]
                     </button>
                   )}
                 </div>
                 <div className="relative group/input flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     type="password"
-                    value={geminiApiKey === DEFAULT_FALLBACK_KEY ? '' : (geminiApiKey || '')}
+                    value={geminiApiKey || ''}
                     onChange={(e) => {
                       const val = e.target.value.trim();
                       if (setGeminiApiKey) setGeminiApiKey(val);
-                      if (setGeminiKeys) setGeminiKeys([val]);
+                      if (setGeminiKeys) setGeminiKeys(val ? [val] : []);
                     }}
-                    placeholder="Enter API key here"
+                    placeholder="Enter personal Gemini API key"
                     className="w-full bg-bg-primary/50 border border-border-primary rounded-xl px-4 py-3 text-xs font-mono text-blue-400 placeholder-blue-400/30 focus:outline-none focus:border-blue-500/60 transition-all shadow-inner"
                   />
                   <button
@@ -355,8 +375,8 @@ export const Settings: React.FC<SettingsProps> = ({
                     onClick={async () => {
                       setIsTestingKey(true);
                       setKeyTestResult(null);
-                      const keyToTest = (geminiApiKey && geminiApiKey !== DEFAULT_FALLBACK_KEY) ? geminiApiKey : undefined;
-                      addLog('Testing Gemini API key connection...', 'process');
+                      const keyToTest = (geminiApiKey && geminiApiKey.trim()) ? geminiApiKey.trim() : undefined;
+                      addLog(`Testing ${keyToTest ? 'personal' : 'server default'} Gemini API key...`, 'process');
                       const result = await checkGeminiConnection(keyToTest);
                       setIsTestingKey(false);
                       if (result.success) {
@@ -369,13 +389,13 @@ export const Settings: React.FC<SettingsProps> = ({
                     }}
                     className="px-4 py-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider shrink-0 transition-all active:scale-95 disabled:opacity-50"
                   >
-                    {isTestingKey ? 'Testing...' : 'Test Key'}
+                    {isTestingKey ? 'Testing...' : (geminiApiKey && geminiApiKey.trim() ? 'Test Key' : 'Test Default')}
                   </button>
                 </div>
                 {isTestingKey && (
                   <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-[10px] font-mono text-blue-400 animate-pulse flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
-                    <span>Testing connection to Gemini API...</span>
+                    <span>Verifying key with backend Gemini proxy...</span>
                   </div>
                 )}
                 {keyTestResult && (
@@ -385,9 +405,9 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 )}
                 <p className="text-[9px] text-text-secondary opacity-60 font-mono">
-                  {geminiApiKey && geminiApiKey !== DEFAULT_FALLBACK_KEY 
-                    ? '✓ Using custom Gemini API key' 
-                    : 'Currently using default fallback key.'}
+                  {geminiApiKey && geminiApiKey.trim() 
+                    ? '✓ Personal key active (takes precedence over application default)' 
+                    : '✓ Using application default key from backend runtime environment'}
                 </p>
               </div>
 
@@ -399,12 +419,12 @@ export const Settings: React.FC<SettingsProps> = ({
                     if (window.aistudio) {
                       try {
                         await window.aistudio.openSelectKey();
-                        addLog('Neural Uplink Authorized: Platform Key Selected', 'success');
+                        addLog('Platform Key Selected via AI Studio Uplink', 'success');
                       } catch {
-                        addLog('Neural Uplink Failed: Key Selection Aborted', 'error');
+                        addLog('Key Selection Cancelled', 'error');
                       }
                     } else {
-                       addLog('Platform secure key pop-up is not available outside the main studio view.', 'info');
+                       addLog('Platform key selection modal is only active in AI Studio main preview.', 'info');
                     }
                   })}
                   className="w-full py-3 bg-bg-primary/30 border border-border-primary text-blue-400 rounded-xl hover:border-blue-500/50 transition-all text-[9px] font-mono uppercase tracking-[0.2em] flex items-center justify-center gap-2 shadow-inner group hover:bg-blue-500/5"

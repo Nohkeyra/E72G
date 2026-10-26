@@ -362,8 +362,8 @@ export function useSynthesis() {
         }
       }
 
-      if (errorMsg.includes('API key not valid') || errorMsg.includes('invalid') || errorMsg.includes('401')) {
-        const authMsg = 'Invalid Gemini API key. Please check your key in Settings or .env.';
+      if (errorMsg.includes('API key not valid') || errorMsg.includes('invalid') || errorMsg.includes('401') || errorMsg.includes('unauthorized') || errorMsg.includes('authentication failed')) {
+        const authMsg = errorMsg || 'Invalid Gemini API key. Please check your key in Settings.';
         addLog(authMsg, 'error', undefined, '401');
         setError(authMsg);
         setIsGenerating(false);

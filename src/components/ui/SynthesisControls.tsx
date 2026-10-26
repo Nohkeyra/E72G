@@ -5,6 +5,7 @@ import { LOGO_TYPE_PRESETS, LOGO_LAYOUT_PRESETS } from '../../modules/logo/optio
 import { playClickSound, triggerHapticFeedback } from '../../utils/soundUtils';
 import { Preset } from '../../types/presets';
 import { MOTION_PROFILE } from '../../lib/motion';
+import { ProviderSelector } from './ProviderSelector';
 
 interface SynthesisControlsProps {
   userInput: string;
@@ -89,6 +90,8 @@ export const SynthesisControls: React.FC<SynthesisControlsProps> = React.memo(({
   };
   return (
     <div className="w-full flex-shrink-0 flex flex-col transition-all duration-300 gap-3">
+      {/* Provider Selector */}
+      <ProviderSelector hasReferenceImage={Boolean(uploadedImage || selectedPreset?.referenceImagePath || selectedPreset?.previewImagePath)} />
       
         {/* Designer Controls (Conditional) */}
       <AnimatePresence>

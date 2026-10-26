@@ -39,8 +39,7 @@ jobs:
 
       - name: Build web bundle (vite)
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: bunx vite build
 
       - name: Sync web assets into Android project
