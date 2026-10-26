@@ -462,6 +462,133 @@ test("Cloudflare: executeCloudflareEditImage sends multipart form payload with n
   }
 });
 
+test("Cloudflare Vectorize: Preprocessing validates dimensions (<16px or >4096px) and resizes large transparent images", async () => {
+  const origAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const origToken = process.env.CLOUDFLARE_API_TOKEN;
+  process.env.CLOUDFLARE_ACCOUNT_ID = "mock-acc-prep";
+  process.env.CLOUDFLARE_API_TOKEN = "mock-tok-prep";
+
+  // 1. Too small image (<16px)
+  const tinyBuffer = await sharp({
+    create: { width: 8, height: 8, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } }
+  }).png().toBuffer();
+
+  await assert.rejects(
+    async () => {
+      await executeCloudflareEditImage({
+        prompt: "Vectorize tiny",
+        imageBuffer: tinyBuffer
+      });
+    },
+    /Reference image dimensions are/
+  );
+
+  // 2. Valid transparent image (>1024px, should be resized and preserved as PNG)
+  const largeTransparentBuffer = await sharp({
+    create: { width: 2048, height: 1024, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+  }).png().toBuffer();
+
+  const originalFetch = globalThis.fetch;
+  let interceptedBody: FormData | null = null;
+  const validPngBuffer = await sharp({
+    create: { width: 16, height: 16, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } }
+  }).png().toBuffer();
+
+  globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    interceptedBody = (init?.body as FormData) || null;
+    return new Response(validPngBuffer, {
+      status: 200,
+      headers: { "Content-Type": "image/png" }
+    });
+  };
+
+  try {
+    const res = await executeCloudflareEditImage({
+      prompt: "Vectorize transparent artwork",
+      imageBuffer: largeTransparentBuffer,
+      aspectRatio: "1:1"
+    });
+
+    assert.equal(res.provider, "cloudflare");
+    assert.ok(interceptedBody !== null);
+    const imageBlob = interceptedBody.get("image_1") as Blob;
+    assert.ok(imageBlob);
+    assert.equal(imageBlob.type, "image/png");
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.CLOUDFLARE_ACCOUNT_ID = origAccount;
+    process.env.CLOUDFLARE_API_TOKEN = origToken;
+  }
+});
+
+test("Cloudflare Vectorize: Retry policy retries on 429/5xx respecting Retry-After and fails immediately on 400", async () => {
+  const origAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const origToken = process.env.CLOUDFLARE_API_TOKEN;
+  process.env.CLOUDFLARE_ACCOUNT_ID = "mock-acc-retry";
+  process.env.CLOUDFLARE_API_TOKEN = "mock-tok-retry";
+
+  const originalFetch = globalThis.fetch;
+  const validPngBuffer = await sharp({
+    create: { width: 16, height: 16, channels: 4, background: { r: 100, g: 100, b: 100, alpha: 1 } }
+  }).png().toBuffer();
+
+  let callCount = 0;
+  globalThis.fetch = async (): Promise<Response> => {
+    callCount++;
+    if (callCount === 1) {
+      return new Response("Rate limited", {
+        status: 429,
+        headers: { "Retry-After": "1" }
+      });
+    }
+    return new Response(validPngBuffer, {
+      status: 200,
+      headers: { "Content-Type": "image/png" }
+    });
+  };
+
+  try {
+    const res = await executeCloudflareEditImage({
+      prompt: "Vectorize with retry",
+      imageBuffer: validPngBuffer
+    });
+    assert.equal(res.provider, "cloudflare");
+    assert.equal(callCount, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.CLOUDFLARE_ACCOUNT_ID = origAccount;
+    process.env.CLOUDFLARE_API_TOKEN = origToken;
+  }
+
+  // Test that HTTP 400 does NOT retry
+  let callCount400 = 0;
+  globalThis.fetch = async (): Promise<Response> => {
+    callCount400++;
+    return new Response(JSON.stringify({ errors: [{ message: "Bad input properties" }] }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+
+  try {
+    await assert.rejects(
+      async () => {
+        await executeCloudflareEditImage({
+          prompt: "Vectorize bad request",
+          imageBuffer: validPngBuffer
+        });
+      },
+      /Cloudflare Workers AI error \(400\)/
+    );
+    assert.equal(callCount400, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.CLOUDFLARE_ACCOUNT_ID = origAccount;
+    process.env.CLOUDFLARE_API_TOKEN = origToken;
+  }
+});
+
+
 
 
 

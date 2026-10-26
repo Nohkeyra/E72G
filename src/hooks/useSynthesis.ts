@@ -343,15 +343,17 @@ export function useSynthesis() {
         return;
       }
 
-      // Handle 429 Rate Limits: Wait 5 seconds and retry, or display friendly cooldown message
+      // Handle 429 Rate Limits / Quota:
       const isRateLimit = errorMsg.includes('429') || 
                           errorMsg.includes('RESOURCE_EXHAUSTED') || 
                           errorMsg.includes('Quota') ||
                           errorMsg.includes('Rate limit');
 
+      const isDailyQuota = errorMsg.toLowerCase().includes('daily') || errorMsg.toLowerCase().includes('quota exceeded') || errorMsg.toLowerCase().includes('billing');
+
       if (isRateLimit) {
-        if (retryCount < 1) {
-          addLog('Rate limit encountered. Waiting 5 seconds for cooldown before retrying...', 'process', undefined, '429');
+        if (!isDailyQuota && retryCount < 1) {
+          addLog('Rate limit encountered (RPM). Waiting 5 seconds for cooldown before retrying...', 'process', undefined, '429');
           setError('Google Gemini API rate limit cooldown in progress (retrying in 5s)...');
           setIsGenerating(false);
           isGeneratingRef.current = false;
@@ -360,7 +362,9 @@ export function useSynthesis() {
           }, 5000);
           return;
         } else {
-          const friendlyRateLimitMsg = 'Google Gemini API rate limit reached (HTTP 429). The shared API key has exceeded Google\'s free quota. Please add your free personal Gemini API key in Settings (⚙) to generate without waiting.';
+          const friendlyRateLimitMsg = isDailyQuota
+            ? 'Google Gemini API daily free quota reached (HTTP 429). The shared API key has exceeded Google\'s free daily quota. Please add your personal Gemini API key in Settings (⚙) or switch to Cloudflare Workers AI (Zero-Cost Tier) for reliable image generation.'
+            : 'Google Gemini API rate limit reached (HTTP 429). Please wait a moment or switch to Cloudflare Workers AI in Settings.';
           addLog(friendlyRateLimitMsg, 'error', undefined, '429');
           setError(friendlyRateLimitMsg);
           setIsGenerating(false);

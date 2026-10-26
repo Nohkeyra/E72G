@@ -260,7 +260,7 @@ export function getDimensionsForAspectRatio(aspectRatio?: string): { width: numb
 export async function executeCloudflareEditImage(
   params: CloudflareEditParams
 ): Promise<CloudflareGenerateResult> {
-  const { prompt, aspectRatio, mimeType } = params;
+  const { prompt, aspectRatio } = params;
   const { accountId, apiToken } = resolveCloudflareCredentials(params);
 
   if (!accountId || !apiToken) {
@@ -295,21 +295,39 @@ export async function executeCloudflareEditImage(
     throw new Error("Reference image exceeds maximum allowed upload size of 20MB.");
   }
 
-  // 3. Validate image format with sharp
-  let verifiedMime = mimeType || "image/png";
+  // 3. Validate image format & dimensions with sharp, preprocess (max 1024px longest edge, preserve transparency)
+  let verifiedMime = "image/png";
+  let processedBuffer: Buffer;
   try {
-    const metadata = await sharp(inputBuffer).metadata();
-    if (!metadata || !metadata.format) {
-      throw new Error("Corrupted metadata");
+    const imageInstance = sharp(inputBuffer);
+    const metadata = await imageInstance.metadata();
+    if (!metadata || !metadata.format || !metadata.width || !metadata.height) {
+      throw new Error("Corrupted or invalid image metadata.");
     }
-    if (metadata.format === "jpeg" || metadata.format === "jpg") {
-      verifiedMime = "image/jpeg";
-    } else if (metadata.format === "png") {
+
+    if (metadata.width < 16 || metadata.height < 16) {
+      throw new Error("Reference image dimensions are too small (minimum 16x16 pixels required).");
+    }
+    if (metadata.width > 4096 || metadata.height > 4096) {
+      throw new Error("Reference image dimensions exceed maximum allowed size of 4096x4096 pixels.");
+    }
+
+    // Resize to max 1024px longest edge while preserving aspect ratio, without enlargement
+    const resized = imageInstance.resize(1024, 1024, {
+      fit: "inside",
+      withoutEnlargement: true
+    });
+
+    // Preserve transparency / quality by exporting as PNG for vector/logo/transparent assets
+    if (metadata.hasAlpha || metadata.format === "png" || metadata.format === "webp" || metadata.format === "svg") {
+      processedBuffer = await resized.png().toBuffer();
       verifiedMime = "image/png";
-    } else if (metadata.format === "webp") {
-      verifiedMime = "image/webp";
-    } else if (metadata.format === "gif") {
-      verifiedMime = "image/gif";
+    } else if (metadata.format === "jpeg" || metadata.format === "jpg") {
+      processedBuffer = await resized.jpeg({ quality: 92 }).toBuffer();
+      verifiedMime = "image/jpeg";
+    } else {
+      processedBuffer = await resized.png().toBuffer();
+      verifiedMime = "image/png";
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -321,26 +339,81 @@ export async function executeCloudflareEditImage(
   const formData = new FormData();
   formData.append("prompt", finalPrompt);
 
-  const imageBlob = new Blob([new Uint8Array(inputBuffer)], { type: verifiedMime });
+  const imageBlob = new Blob([new Uint8Array(processedBuffer)], { type: verifiedMime });
   formData.append("image_1", imageBlob, "reference_image.png");
   formData.append("width", String(width));
   formData.append("height", String(height));
 
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`;
 
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiToken}`
-      },
-      body: formData
-    });
-  } catch (netErr: unknown) {
-    throw new Error(
-      `Failed to connect to Cloudflare Workers AI: ${netErr instanceof Error ? netErr.message : "Network error"}`
-    );
+  // 5. Execute request with timeout, retry policy (exponential backoff + jitter), and Retry-After handling
+  const maxAttempts = 3;
+  const overallDeadlineMs = 90000;
+  const startTime = Date.now();
+  let attempt = 0;
+  let response: Response | null = null;
+  let lastError: Error | null = null;
+
+  while (attempt < maxAttempts) {
+    attempt++;
+    if (Date.now() - startTime > overallDeadlineMs) {
+      throw new Error("Cloudflare Workers AI request timed out (overall deadline exceeded).");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`
+        },
+        body: formData,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok || response.status === 400 || response.status === 401 || response.status === 403) {
+        break; // Non-retryable status or success
+      }
+
+      // Check if retryable (429 or 5xx)
+      if (response.status === 429 || (response.status >= 500 && response.status <= 599)) {
+        if (attempt >= maxAttempts) break;
+
+        let retryAfterMs = 2000 * Math.pow(2, attempt - 1) + Math.random() * 1000;
+        const retryAfterHeader = response.headers.get("retry-after");
+        if (retryAfterHeader) {
+          const parsedSeconds = parseInt(retryAfterHeader, 10);
+          if (!isNaN(parsedSeconds)) {
+            retryAfterMs = Math.max(retryAfterMs, parsedSeconds * 1000);
+          } else {
+            const parsedDate = Date.parse(retryAfterHeader);
+            if (!isNaN(parsedDate)) {
+              retryAfterMs = Math.max(retryAfterMs, parsedDate - Date.now());
+            }
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfterMs, 15000)));
+        continue;
+      } else {
+        break;
+      }
+    } catch (netErr: unknown) {
+      clearTimeout(timeoutId);
+      lastError = netErr instanceof Error ? netErr : new Error("Network error");
+      if (attempt >= maxAttempts) {
+        throw new Error(`Failed to connect to Cloudflare Workers AI after ${maxAttempts} attempts: ${lastError.message}`);
+      }
+      const backoffMs = 1500 * Math.pow(2, attempt - 1) + Math.random() * 500;
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+
+  if (!response) {
+    throw new Error(`Failed to connect to Cloudflare Workers AI: ${lastError?.message || "No response received"}`);
   }
 
   if (response.status === 429) {
@@ -391,16 +464,17 @@ export async function executeCloudflareEditImage(
     throw new Error("Cloudflare Workers AI returned an empty response buffer");
   }
 
-  // Inspect image format using sharp & convert to PNG
-  let pngBuffer: Buffer = rawBuffer;
+  // Inspect image format using sharp & convert to verified PNG
+  let pngBuffer: Buffer;
   try {
     const metadata = await sharp(rawBuffer).metadata();
-    if (metadata.format !== "png") {
-      pngBuffer = await sharp(rawBuffer).png().toBuffer();
+    if (!metadata || !metadata.format) {
+      throw new Error("Upstream response is not a valid image format.");
     }
-  } catch (formatErr) {
-    console.warn("Sharp failed to read image format, attempting direct PNG conversion:", formatErr);
     pngBuffer = await sharp(rawBuffer).png().toBuffer();
+  } catch (formatErr) {
+    const msg = formatErr instanceof Error ? formatErr.message : String(formatErr);
+    throw new Error(`Failed to decode image response from Cloudflare Workers AI: ${msg}`);
   }
 
   // Validate PNG magic bytes

@@ -108,6 +108,10 @@ export function handleGeminiError(error: unknown, isPersonal: boolean): { status
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const err = error as any;
   const rawMsg = err?.message || String(error);
+  const upperMsg = rawMsg.toUpperCase();
+
+  const isDailyQuota = upperMsg.includes("DAILY") || upperMsg.includes("QUOTA EXCEEDED") || upperMsg.includes("BILLING") || upperMsg.includes("RESOURCE_EXHAUSTED");
+  const isRateLimit = upperMsg.includes("RATE LIMIT") || upperMsg.includes("429") || upperMsg.includes("PER MINUTE");
 
   if (isPersonal) {
     if (isAuthError(error)) {
@@ -117,9 +121,15 @@ export function handleGeminiError(error: unknown, isPersonal: boolean): { status
       };
     }
     if (isQuotaError(error)) {
+      if (isDailyQuota && !isRateLimit) {
+        return {
+          status: 429,
+          message: "Personal Gemini API key daily free quota limit reached. Please wait for quota reset, enable billing on your Google Cloud project, or switch to Cloudflare Workers AI."
+        };
+      }
       return {
         status: 429,
-        message: "Personal Gemini API key quota or rate limit exceeded (429). Please check your Google AI Studio quota."
+        message: "Personal Gemini API key rate limit reached (HTTP 429). Please wait a moment before sending more requests."
       };
     }
     return {
@@ -136,9 +146,15 @@ export function handleGeminiError(error: unknown, isPersonal: boolean): { status
     };
   }
   if (isQuotaError(error)) {
+    if (isDailyQuota && !isRateLimit) {
+      return {
+        status: 429,
+        message: "Google Gemini API daily free quota reached (HTTP 429). The shared API key has exceeded Google's free daily quota. Please add your personal Gemini API key in Settings (⚙) or switch to Cloudflare Workers AI (Zero-Cost Tier) for reliable image generation."
+      };
+    }
     return {
       status: 429,
-      message: "Google Gemini API quota reached (HTTP 429). Image generation requires a billing-enabled Gemini API key. Please check your project billing or add your personal Gemini API key in Settings."
+      message: "Google Gemini API rate limit reached (HTTP 429 - Requests Per Minute). Please wait a moment, or switch to Cloudflare Workers AI."
     };
   }
 
