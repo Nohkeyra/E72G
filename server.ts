@@ -170,6 +170,11 @@ export function createApp() {
     message: "Rate limit reached. Please wait a moment before sending more requests."
   });
 
+  // AI Studio control plane status endpoint
+  app.get("/__aistudio_internal_control_plane/dev/status", (req, res) => {
+    res.json({ status: "ok", ready: true });
+  });
+
   // 1. Health check (reports if server-side key or Cloudflare credentials are available)
   app.get("/api/health", (req, res) => {
     res.json({
