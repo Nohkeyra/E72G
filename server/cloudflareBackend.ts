@@ -262,6 +262,29 @@ export function getDimensionsForAspectRatio(aspectRatio?: string): { width: numb
   }
 }
 
+/** Longest edge for reference images sent to FLUX.2 [klein] (Cloudflare documents inputs smaller than 512x512). */
+export const CLOUDFLARE_KLEIN_MAX_REFERENCE_EDGE = 512;
+
+/** Documented reference-image field name for FLUX.2 [klein] on Workers AI (index 0 = first reference). */
+export const CLOUDFLARE_KLEIN_REFERENCE_FIELD = "input_image_0";
+
+export function buildKleinEditFormData(args: {
+  prompt: string;
+  image: Buffer;
+  mimeType: string;
+  width: number;
+  height: number;
+}): FormData {
+  const formData = new FormData();
+  formData.append("prompt", args.prompt);
+  const ext = args.mimeType === "image/jpeg" ? "jpg" : "png";
+  const blob = new Blob([new Uint8Array(args.image)], { type: args.mimeType });
+  formData.append(CLOUDFLARE_KLEIN_REFERENCE_FIELD, blob, `reference_image.${ext}`);
+  formData.append("width", String(args.width));
+  formData.append("height", String(args.height));
+  return formData;
+}
+
 export async function executeCloudflareEditImage(
   params: CloudflareEditParams
 ): Promise<CloudflareGenerateResult> {
@@ -300,7 +323,8 @@ export async function executeCloudflareEditImage(
     throw new Error("Reference image exceeds maximum allowed upload size of 20MB.");
   }
 
-  // 3. Validate image format & dimensions with sharp, preprocess (max 1024px longest edge, preserve transparency)
+  // 3. Validate image format & dimensions with sharp, preprocess (max 512px longest edge per Cloudflare's documented
+  //    FLUX.2 [klein] reference-image limit, preserve transparency)
   let verifiedMime = "image/png";
   let processedBuffer: Buffer;
   try {
@@ -317,8 +341,8 @@ export async function executeCloudflareEditImage(
       throw new Error("Reference image dimensions exceed maximum allowed size of 4096x4096 pixels.");
     }
 
-    // Resize to max 1024px longest edge while preserving aspect ratio, without enlargement
-    const resized = imageInstance.resize(1024, 1024, {
+    // Resize to the documented reference-image bound while preserving aspect ratio, without enlargement
+    const resized = imageInstance.resize(CLOUDFLARE_KLEIN_MAX_REFERENCE_EDGE, CLOUDFLARE_KLEIN_MAX_REFERENCE_EDGE, {
       fit: "inside",
       withoutEnlargement: true
     });
@@ -339,17 +363,18 @@ export async function executeCloudflareEditImage(
     throw new Error(`Unsupported or corrupted reference image format: ${msg}`);
   }
 
-  // 4. Build multipart/form-data payload for FLUX.2 [klein] 4B with robust multi-reference fields
+  // 4. Build multipart/form-data payload for FLUX.2 [klein] 4B.
+  //    Documented schema (developers.cloudflare.com/changelog/post/2026-01-15-flux-2-klein-4b-workers-ai):
+  //    reference images MUST be named input_image_0..input_image_3 (binary). Any other field name is not
+  //    a reference image, so the model would silently run as text-to-image.
   const { width, height } = getDimensionsForAspectRatio(aspectRatio);
-  const formData = new FormData();
-  formData.append("prompt", finalPrompt);
-
-  const imageBlob = new Blob([new Uint8Array(processedBuffer)], { type: verifiedMime });
-  formData.append("image", imageBlob, "reference_image.png");
-  formData.append("image_0", imageBlob, "reference_image.png");
-  formData.append("image_1", imageBlob, "reference_image.png");
-  formData.append("width", String(width));
-  formData.append("height", String(height));
+  const formData = buildKleinEditFormData({
+    prompt: finalPrompt,
+    image: processedBuffer,
+    mimeType: verifiedMime,
+    width,
+    height
+  });
 
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`;
 

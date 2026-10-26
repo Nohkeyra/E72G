@@ -179,7 +179,11 @@ test("Cloudflare: Image editing successfully processes valid PNG image buffer an
     assert.equal(interceptedBody.get("prompt")?.toString().includes("Recolor fairing"), true);
     assert.equal(interceptedBody.get("width"), "1024");
     assert.equal(interceptedBody.get("height"), "576");
-    assert.ok(interceptedBody.get("image_1") !== null);
+    // Documented FLUX.2 [klein] reference field; speculative names must not be sent
+    assert.ok(interceptedBody.get("input_image_0") !== null);
+    for (const legacy of ["image", "image_0", "image_1"]) {
+      assert.equal(interceptedBody.get(legacy), null);
+    }
   } finally {
     globalThis.fetch = originalFetch;
     process.env.CLOUDFLARE_ACCOUNT_ID = origAccount;
@@ -453,9 +457,10 @@ test("Cloudflare: executeCloudflareEditImage sends multipart form payload with n
     assert.equal(interceptedBody.get("prompt")?.toString().includes("Refine logo colors"), true);
     assert.equal(interceptedBody.get("width"), "1024");
     assert.equal(interceptedBody.get("height"), "1024");
-    assert.ok(interceptedBody.get("image") !== null);
-    assert.ok(interceptedBody.get("image_0") !== null);
-    assert.ok(interceptedBody.get("image_1") !== null);
+    assert.ok(interceptedBody.get("input_image_0") !== null);
+    for (const legacy of ["image", "image_0", "image_1"]) {
+      assert.equal(interceptedBody.get(legacy), null);
+    }
     assert.equal(interceptedBody.get("num_steps"), null);
     assert.equal(interceptedBody.get("steps"), null);
   } finally {
@@ -514,9 +519,12 @@ test("Cloudflare Vectorize: Preprocessing validates dimensions (<16px or >4096px
 
     assert.equal(res.provider, "cloudflare");
     assert.ok(interceptedBody !== null);
-    const imageBlob = interceptedBody.get("image_1") as Blob;
+    const imageBlob = interceptedBody.get("input_image_0") as Blob;
     assert.ok(imageBlob);
     assert.equal(imageBlob.type, "image/png");
+    // Documented FLUX.2 [klein] bound: reference images are downscaled to <= 512px on the longest edge
+    const meta = await sharp(Buffer.from(await imageBlob.arrayBuffer())).metadata();
+    assert.ok((meta.width || 0) <= 512 && (meta.height || 0) <= 512);
   } finally {
     globalThis.fetch = originalFetch;
     process.env.CLOUDFLARE_ACCOUNT_ID = origAccount;

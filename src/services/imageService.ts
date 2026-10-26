@@ -20,6 +20,14 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
     preset?.referenceImagePath
   );
 
+  // Capability gate: never send a reference-image request to a model that cannot condition on it.
+  // A text description is not equivalent to an image reference, so fail loudly instead of degrading.
+  if (hasReference && registryEntry.supportsReferenceImages === false) {
+    throw new Error(
+      `${registryEntry.label} does not support reference-image generation, so your uploaded image cannot be used with it. Select a model that supports reference images.`
+    );
+  }
+
   // 3. Cloudflare Execution Path
   if (isCloudflare) {
     const finalPrompt = buildFinalPrompt(prompt, negativePrompt);

@@ -6,6 +6,7 @@ import { AspectRatio, Preset } from '../types/presets';
 import { validateModelCall } from '../services/modelValidator';
 import { generateImage } from '../services/imageService';
 import { analyzeImage, analyzeVectorSubject } from '../services/geminiService';
+import { VectorAnalysisCache, fingerprintImage, groundVectorSubject } from '../services/vectorGrounding';
 import { incrementGeminiQuota, checkQuota } from '../services/quotaUtils';
 import { formatForGeminiAttention, parsePromptWeights } from '../utils/promptUtils';
 import { ARTISTIC_MODIFIERS, GLOBAL_NEGATIVE_PROMPT } from '../lib/constants';
@@ -56,14 +57,7 @@ export function useSynthesis() {
     activeTab: '' as Tab,
     userInput: ''
   });
-  const cachedVectorAnalysisRef = useRef<{
-    imageKey: string | null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    analysis: any;
-  }>({
-    imageKey: null,
-    analysis: null
-  });
+  const vectorAnalysisCacheRef = useRef(new VectorAnalysisCache());
 
   const addDebugLog = useCallback((msg: string) => {
     if (showDebug) addLog(`[DEBUG] ${msg}`, 'info');
@@ -113,7 +107,7 @@ export function useSynthesis() {
     abortControllerRef.current = controller;
 
     // VORTEX: Delta-Only synthesis detection
-    const currentImageHash = uploadedImage ? uploadedImage.substring(0, 100) : null;
+    const currentImageHash = uploadedImage ? fingerprintImage(uploadedImage) : null;
     const prompt = promptOverride || userInput || (activeTab === 'vectorize' ? 'vectorize this image' : 'Custom Lettering');
     const isFastTrack = 
       cachedAIGenState.current.imageHash === currentImageHash &&
@@ -178,30 +172,53 @@ export function useSynthesis() {
     const currentModule = getModule(activeTab);
     const currentKey = getActiveGeminiKey();
 
-    // In vectorize tab with an uploaded image: run or reuse Gemini 3.8 Flash analysis to identify and ground the subject
+    // Vectorize + uploaded image: the subject analysis is bound to this exact image (content hash) and verified
+    // against it before generation. A rejected analysis stops the run; it is never used as if it were correct.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let vectorAnalysisData: any = null;
     if (activeTab === 'vectorize' && uploadedImage) {
-      const imageKey = `${uploadedImage.slice(0, 100)}_${uploadedImage.length}`;
-      if (cachedVectorAnalysisRef.current.imageKey === imageKey && cachedVectorAnalysisRef.current.analysis) {
-        vectorAnalysisData = cachedVectorAnalysisRef.current.analysis;
-        addLog(`[VORTEX] Using cached subject morphology for "${vectorAnalysisData.subjectName || 'reference'}".`, 'info');
+      addLog('Analyzing reference image with Gemini 3.8 Flash...', 'process');
+      let grounding;
+      try {
+        grounding = await groundVectorSubject({
+          imageDataUrl: uploadedImage,
+          mimeType: uploadedMimeType || 'image/png',
+          cache: vectorAnalysisCacheRef.current,
+          analyze: (img, mime) => analyzeVectorSubject(img, mime, currentKey, controller.signal)
+        });
+      } catch (groundErr) {
+        clearInterval(progressInterval);
+        clearTimeout(globalTimeoutId);
+        setIsGenerating(false);
+        isGeneratingRef.current = false;
+        if (controller.signal.aborted) return;
+        const m = groundErr instanceof Error ? groundErr.message : String(groundErr);
+        setError(`Subject grounding failed: ${m}`);
+        addLog(`Subject grounding failed: ${m}`, 'error');
+        return;
+      }
+
+      if (grounding.status === 'rejected') {
+        clearInterval(progressInterval);
+        clearTimeout(globalTimeoutId);
+        setIsGenerating(false);
+        isGeneratingRef.current = false;
+        setError(`Could not verify the subject of your image, so nothing was generated. ${grounding.reason} Please retry.`);
+        addLog(`Subject grounding rejected: ${grounding.reason}`, 'error');
+        return;
+      }
+
+      if (grounding.status === 'grounded') {
+        vectorAnalysisData = grounding.analysis;
+        addLog(
+          grounding.fromCache
+            ? `[VORTEX] Using verified subject analysis for "${grounding.analysis.subjectName}".`
+            : `Subject verified: ${grounding.analysis.subjectName}`,
+          grounding.fromCache ? 'info' : 'success'
+        );
       } else {
-        addLog('Analyzing reference image with Gemini 3.8 Flash...', 'process');
-        try {
-          vectorAnalysisData = await analyzeVectorSubject(
-            uploadedImage,
-            uploadedMimeType || 'image/png',
-            currentKey
-          );
-          if (vectorAnalysisData) {
-            cachedVectorAnalysisRef.current = { imageKey, analysis: vectorAnalysisData };
-            addLog(`Subject analyzed: ${vectorAnalysisData.subjectName || 'Subject identified'}`, 'success');
-          }
-        } catch (visionErr) {
-          console.warn('Pre-synthesis vision analysis skipped:', visionErr);
-          addLog('Proceeding with direct image-to-image synthesis...', 'info');
-        }
+        // No analysis available (e.g. no Gemini key / network). Only the reference image itself grounds the run.
+        addLog(`Subject analysis unavailable (${grounding.reason}). Proceeding with the reference image only.`, 'info');
       }
     }
 
@@ -317,7 +334,7 @@ export function useSynthesis() {
       
       // Cache the state for next time
       cachedAIGenState.current = {
-        imageHash: uploadedImage ? uploadedImage.substring(0, 100) : null,
+        imageHash: uploadedImage ? fingerprintImage(uploadedImage) : null,
         presetName: selectedPreset?.name || '',
         userInput: userInput,
         activeTab: activeTab

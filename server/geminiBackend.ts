@@ -1,5 +1,6 @@
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import type { Request } from "express";
+import { createHash } from "node:crypto";
 
 export interface ResolvedKey {
   key: string;
@@ -322,7 +323,17 @@ export async function executeGenerateImage(params: {
     }
   }
 
-  // Safety net fallback to Imagen 3 if supported by the key
+  // Imagen 3 is text-to-image only: it cannot take the reference image. With a reference present, falling back
+  // to it would silently generate an unrelated subject, so surface the failure instead.
+  const hasReferenceImage = Boolean(base64Image && mimeType);
+  if (hasReferenceImage) {
+    if (lastError) {
+      throw lastError;
+    }
+    throw new Error("Reference-image generation failed on every image-conditioned Gemini model. No text-only fallback was used because it cannot preserve the uploaded subject.");
+  }
+
+  // Safety net fallback to Imagen 3 if supported by the key (text-only requests)
   try {
     const imagenFallback = await ai.models.generateImages({
       model: "imagen-3.0-generate-002",
@@ -466,47 +477,38 @@ export interface VectorAnalysisResult {
   vectorAdvice: string;
 }
 
-export async function executeAnalyzeVector(params: {
-  base64Image: string;
-  mimeType: string;
-  apiKey: string;
-}): Promise<VectorAnalysisResult | null> {
-  const { base64Image, mimeType, apiKey } = params;
+export class VectorAnalysisError extends Error {
+  constructor(
+    public readonly code: "unparseable" | "inconsistent",
+    message: string,
+    public readonly observedSubject?: string
+  ) {
+    super(message);
+    this.name = "VectorAnalysisError";
+  }
+}
+
+export type VectorVisionCall = (parts: unknown[]) => Promise<string>;
+
+function defaultVectorVisionCall(apiKey: string): VectorVisionCall {
   const ai = createAiClient(apiKey);
-  const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
+  return async (parts) => {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: { parts }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    return response.text || "";
+  };
+}
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            data: formattedBase64,
-            mimeType: mimeType || "image/png"
-          }
-        },
-        {
-          text: `You are an expert Vector Art & Visual Morphology Auditor.
-Analyze this reference image to prepare it for intelligent 2D vector-style illustration generation.
-Extract the subject's exact visual morphology so the generative model can faithfully preserve it.
+/** SHA-256 (hex) of the decoded image bytes; lets the client prove an analysis belongs to the image it uploaded. */
+export function sha256OfBase64Image(base64Image: string): string {
+  const raw = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
+  return createHash("sha256").update(Buffer.from(raw, "base64")).digest("hex");
+}
 
-Provide a breakdown formatted strictly as:
-SUBJECT: [Concise 2-6 word identification of the primary subject, e.g. "standing bulldog with spiked collar" or "vintage red sports coupe"]
-DESCRIPTION: [Accurate description of the subject's pose, orientation, proportions, and placement in the frame]
-SILHOUETTE: [Detailed outline and outer contour description, proportions, posture, and spatial composition]
-DETAILS: [Crucial distinctive features, component counts, emblems, markings, or textures that define the subject's identity and must be preserved]
-COLORS: [3 to 5 dominant colors and their relationship, e.g. "Crimson red body, gloss black trim, chrome accents, charcoal background"]
-SHAPES: [Geometric primitives, curve dynamics, and outline boundary rules]
-VECTOR_ADVICE: [Instructions on translating this subject into clean vector planes, smooth bezier contours, and solid or cel-shaded fills without photographic noise]`
-        }
-      ]
-    }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any);
-
-  const text = response.text || "";
-  if (!text) return null;
-
+export function parseVectorAnalysisText(text: string): VectorAnalysisResult {
   // Support both JSON output (if model formatted as JSON) and KEY: VALUE lines
   let parsedJson: Partial<VectorAnalysisResult> = {};
   try {
@@ -520,31 +522,108 @@ VECTOR_ADVICE: [Instructions on translating this subject into clean vector plane
     // Non-JSON response, continue with regex parsing
   }
 
-  const subjectMatch = text.match(/SUBJECT(?:_NAME)?:\s*([^\n]+)/i);
-  const descMatch = text.match(/DESCRIPTION:\s*([^\n]+)/i);
-  const silMatch = text.match(/SILHOUETTE(?:_AND_CONTOURS)?:\s*([^\n]+)/i);
-  const detailsMatch = text.match(/(?:DISTINCTIVE_)?DETAILS:\s*([^\n]+)/i);
-  const colorsMatch = text.match(/COLORS(?:_PALETTE)?:\s*([^\n]+)/i);
-  const shapesMatch = text.match(/SHAPES(?:_AND_GEOMETRY)?:\s*([^\n]+)/i);
-  const adviceMatch = text.match(/VECTOR_ADVICE:\s*([^\n]+)/i);
+  const pick = (re: RegExp) => (text.match(re)?.[1] || "").trim();
+  const subjectName = (parsedJson.subjectName || pick(/SUBJECT(?:_NAME)?:\s*([^\n]+)/i)).trim();
 
-  const subjectName = parsedJson.subjectName || (subjectMatch ? subjectMatch[1].trim() : "the reference subject");
-  const silhouette = parsedJson.silhouette || (silMatch ? silMatch[1].trim() : "Accurate subject contour and proportions");
-  const distinctiveDetails = parsedJson.distinctiveDetails || (detailsMatch ? detailsMatch[1].trim() : "Core identifying features and structure");
-  const colors = parsedJson.colors || (colorsMatch ? colorsMatch[1].trim() : "Cohesive flat palette");
-  const shapes = parsedJson.shapes || (shapesMatch ? shapesMatch[1].trim() : "Clean 2D vector paths");
-  const vectorAdvice = parsedJson.vectorAdvice || (adviceMatch ? adviceMatch[1].trim() : "Render with crisp bezier curves and solid color blocking");
-  const description = parsedJson.description || (descMatch ? descMatch[1].trim() : `${subjectName}. ${silhouette}`);
+  // No fabricated defaults: an analysis without an identified subject is not an analysis.
+  if (!subjectName) {
+    throw new VectorAnalysisError("unparseable", "Subject analysis did not identify a subject in the uploaded image.");
+  }
 
+  const silhouette = parsedJson.silhouette || pick(/SILHOUETTE(?:_AND_CONTOURS)?:\s*([^\n]+)/i);
+  const description = parsedJson.description || pick(/DESCRIPTION:\s*([^\n]+)/i);
   return {
     subjectName,
-    description,
-    silhouette,
-    distinctiveDetails,
-    colors,
-    shapes,
-    vectorAdvice
+    description: description || subjectName,
+    silhouette: silhouette || undefined,
+    distinctiveDetails: parsedJson.distinctiveDetails || pick(/(?:DISTINCTIVE_)?DETAILS:\s*([^\n]+)/i) || undefined,
+    colors: parsedJson.colors || pick(/COLORS(?:_PALETTE)?:\s*([^\n]+)/i) || "",
+    shapes: parsedJson.shapes || pick(/SHAPES(?:_AND_GEOMETRY)?:\s*([^\n]+)/i) || "",
+    vectorAdvice: parsedJson.vectorAdvice || pick(/VECTOR_ADVICE:\s*([^\n]+)/i) || undefined
   };
+}
+
+/**
+ * Independent grounding check: the same image is shown to the vision model together with the extracted
+ * description and it must say whether the description is of what is actually visible. Category-agnostic.
+ */
+export async function verifyVectorAnalysis(
+  imagePart: unknown,
+  analysis: VectorAnalysisResult,
+  call: VectorVisionCall
+): Promise<{ matches: boolean; observedSubject: string }> {
+  const text = await call([
+    imagePart,
+    {
+      text: `You are verifying an image description. Look at the attached image, then judge the CLAIMED description.
+CLAIMED SUBJECT: ${analysis.subjectName}
+CLAIMED DETAILS: ${analysis.description}
+Reply with ONLY a JSON object: {"observedSubject": "<2-6 words naming the main subject you actually see>", "matches": <true if the claimed subject is the main subject visible in the image, otherwise false>}`
+    }
+  ]);
+  const jsonText = text.match(/\{[\s\S]*\}/)?.[0];
+  if (!jsonText) {
+    throw new VectorAnalysisError("unparseable", "Subject verification returned an unreadable response.");
+  }
+  try {
+    const parsed = JSON.parse(jsonText) as { matches?: unknown; observedSubject?: unknown };
+    if (typeof parsed.matches !== "boolean") {
+      throw new Error("missing boolean");
+    }
+    return { matches: parsed.matches, observedSubject: String(parsed.observedSubject || "") };
+  } catch {
+    throw new VectorAnalysisError("unparseable", "Subject verification returned an unreadable response.");
+  }
+}
+
+export async function executeAnalyzeVector(
+  params: {
+    base64Image: string;
+    mimeType: string;
+    apiKey: string;
+  },
+  call?: VectorVisionCall
+): Promise<VectorAnalysisResult & { imageSha256: string }> {
+  const { base64Image, mimeType, apiKey } = params;
+  const vision = call || defaultVectorVisionCall(apiKey);
+  const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
+  const imagePart = {
+    inlineData: {
+      data: formattedBase64,
+      mimeType: mimeType || "image/png"
+    }
+  };
+
+  const text = await vision([
+    imagePart,
+    {
+      text: `You are an expert Vector Art & Visual Morphology Auditor.
+Analyze this reference image to prepare it for intelligent 2D vector-style illustration generation.
+Extract the subject's exact visual morphology so the generative model can faithfully preserve it.
+
+Provide a breakdown formatted strictly as:
+SUBJECT: [Concise 2-6 word identification of the primary subject, e.g. "standing bulldog with spiked collar" or "vintage red sports coupe"]
+DESCRIPTION: [Accurate description of the subject's pose, orientation, proportions, and placement in the frame]
+SILHOUETTE: [Detailed outline and outer contour description, proportions, posture, and spatial composition]
+DETAILS: [Crucial distinctive features, component counts, emblems, markings, or textures that define the subject's identity and must be preserved]
+COLORS: [3 to 5 dominant colors and their relationship, e.g. "Crimson red body, gloss black trim, chrome accents, charcoal background"]
+SHAPES: [Geometric primitives, curve dynamics, and outline boundary rules]
+VECTOR_ADVICE: [Instructions on translating this subject into clean vector planes, smooth bezier contours, and solid or cel-shaded fills without photographic noise]`
+    }
+  ]);
+
+  const analysis = parseVectorAnalysisText(text);
+
+  const verdict = await verifyVectorAnalysis(imagePart, analysis, vision);
+  if (!verdict.matches) {
+    throw new VectorAnalysisError(
+      "inconsistent",
+      `Subject analysis ("${analysis.subjectName}") does not match the uploaded image${verdict.observedSubject ? ` (it appears to show: ${verdict.observedSubject})` : ""}. Please retry.`,
+      verdict.observedSubject || undefined
+    );
+  }
+
+  return { ...analysis, imageSha256: sha256OfBase64Image(base64Image) };
 }
 
 export async function executeRefineTypography(params: {

@@ -149,16 +149,25 @@ export interface VectorAnalysisResult {
   colors: string;
   shapes: string;
   vectorAdvice?: string;
+  /** SHA-256 (hex) of the image bytes the server actually analyzed; used to bind the analysis to the upload. */
+  imageSha256?: string;
 }
 
+export type VectorAnalyzeOutcome =
+  | { ok: true; data: VectorAnalysisResult }
+  /** `rejected`: the server analyzed the image and found the analysis unusable/inconsistent. `unavailable`: no analysis could be obtained. */
+  | { ok: false; kind: "rejected" | "unavailable"; error: string };
+
 /**
- * Direct Vector Subject Analysis via Backend Route
+ * Direct Vector Subject Analysis via Backend Route.
+ * Never returns a silent null: callers must handle rejected/unavailable explicitly.
  */
 export async function analyzeVectorSubject(
   base64Image: string,
   mimeType: string,
-  apiKeyOverride?: string
-): Promise<VectorAnalysisResult | null> {
+  apiKeyOverride?: string,
+  signal?: AbortSignal
+): Promise<VectorAnalyzeOutcome> {
   try {
     const url = apiUrl("/api/gemini/analyze-vector");
     const headers = getApiHeaders(apiKeyOverride);
@@ -166,21 +175,26 @@ export async function analyzeVectorSubject(
     const response = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        base64Image,
-        mimeType
-      })
+      body: JSON.stringify({ base64Image, mimeType }),
+      signal
     });
 
-    if (!response.ok) {
-      return null;
-    }
-
     const data = await response.json().catch(() => null);
-    return data;
+
+    if (!response.ok) {
+      const error = (data && data.error) || `Analysis failed (${response.status})`;
+      return { ok: false, kind: response.status === 422 ? "rejected" : "unavailable", error };
+    }
+    if (!data || typeof data !== "object") {
+      return { ok: false, kind: "rejected", error: "Subject analysis returned an empty response." };
+    }
+    return { ok: true, data: data as VectorAnalysisResult };
   } catch (err) {
-    console.warn("[GEMINI BACKEND CLIENT] Vector subject analysis notice:", err);
-    return null;
+    if (signal?.aborted) {
+      throw err;
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, kind: "unavailable", error: `Subject analysis could not be reached: ${msg}` };
   }
 }
 

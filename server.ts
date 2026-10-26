@@ -10,6 +10,7 @@ import {
   executeVerifyKey,
   executeAnalyze,
   executeAnalyzeVector,
+  VectorAnalysisError,
   executeRefineTypography,
   executeVisionAnalysis,
   handleGeminiError,
@@ -191,7 +192,12 @@ export function createApp() {
 
   // Cloudflare Workers AI FLUX.1 [schnell] Image Generation
   app.post("/api/cloudflare/generate-image", apiLimiter, async (req, res) => {
-    const { prompt, aspectRatio } = req.body || {};
+    const { prompt, aspectRatio, base64Image } = req.body || {};
+    if (base64Image) {
+      return res.status(400).json({
+        error: "Reference image is not supported by Cloudflare FLUX.1 [schnell] text-to-image. Use /api/cloudflare/edit-image (FLUX.2 [klein]) for image-conditioned generation."
+      });
+    }
     try {
       const result = await executeCloudflareGenerateImage({ prompt, aspectRatio });
       return res.json(result);
@@ -455,12 +461,18 @@ export function createApp() {
       });
       res.json(result);
     } catch (err) {
+      if (err instanceof VectorAnalysisError) {
+        return res.status(422).json({
+          error: err.message,
+          code: err.code,
+          observedSubject: err.observedSubject
+        });
+      }
       const sanitized = handleGeminiError(err, isPersonal);
       res.status(sanitized.status).json({ error: sanitized.message });
     }
   });
 
-  // 7. Typography Prompt Refinement
   app.post("/api/gemini/refine-typography", apiLimiter, async (req, res) => {
     const { key, isPersonal } = resolveApiKey(req);
     const { base64Image, mimeType, originalPrompt, targetText, targetPreset } = req.body || {};
