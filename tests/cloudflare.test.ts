@@ -372,5 +372,96 @@ test("Image Service: Failed reference resolution throws explicit error without f
   }
 });
 
+test("Cloudflare: executeCloudflareGenerateImage sends correct JSON payload with 'steps: 4' and no 'num_steps'", async () => {
+  const origAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const origToken = process.env.CLOUDFLARE_API_TOKEN;
+  process.env.CLOUDFLARE_ACCOUNT_ID = "mock-acc-gen";
+  process.env.CLOUDFLARE_API_TOKEN = "mock-tok-gen";
+
+  const originalFetch = globalThis.fetch;
+  let interceptedUrl = "";
+  let interceptedBodyJson: Record<string, unknown> | null = null;
+
+  const validPngBuffer = await sharp({
+    create: { width: 16, height: 16, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } }
+  }).png().toBuffer();
+
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    interceptedUrl = String(input);
+    if (init?.body) {
+      interceptedBodyJson = JSON.parse(String(init.body));
+    }
+    return new Response(validPngBuffer, {
+      status: 200,
+      headers: { "Content-Type": "image/png" }
+    });
+  };
+
+  try {
+    const res = await executeCloudflareGenerateImage({
+      prompt: "Futuristic vector logo",
+      aspectRatio: "1:1"
+    });
+
+    assert.equal(res.provider, "cloudflare");
+    assert.equal(res.modelUsed, "@cf/black-forest-labs/flux-1-schnell");
+    assert.ok(interceptedUrl.includes("@cf/black-forest-labs/flux-1-schnell"));
+    assert.ok(interceptedBodyJson);
+    assert.equal(interceptedBodyJson.steps, 4);
+    assert.equal(interceptedBodyJson.num_steps, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.CLOUDFLARE_ACCOUNT_ID = origAccount;
+    process.env.CLOUDFLARE_API_TOKEN = origToken;
+  }
+});
+
+test("Cloudflare: executeCloudflareEditImage sends multipart form payload with no 'num_steps' or 'steps' parameters", async () => {
+  const origAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const origToken = process.env.CLOUDFLARE_API_TOKEN;
+  process.env.CLOUDFLARE_ACCOUNT_ID = "mock-acc-edit";
+  process.env.CLOUDFLARE_API_TOKEN = "mock-tok-edit";
+
+  const originalFetch = globalThis.fetch;
+  let interceptedUrl = "";
+  let interceptedBody: FormData | null = null;
+
+  const validPngBuffer = await sharp({
+    create: { width: 16, height: 16, channels: 4, background: { r: 100, g: 100, b: 100, alpha: 1 } }
+  }).png().toBuffer();
+
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    interceptedUrl = String(input);
+    interceptedBody = (init?.body as FormData) || null;
+    return new Response(validPngBuffer, {
+      status: 200,
+      headers: { "Content-Type": "image/png" }
+    });
+  };
+
+  try {
+    const res = await executeCloudflareEditImage({
+      prompt: "Refine logo colors",
+      imageBuffer: validPngBuffer,
+      aspectRatio: "1:1"
+    });
+
+    assert.equal(res.provider, "cloudflare");
+    assert.equal(res.modelUsed, "@cf/black-forest-labs/flux-2-klein-4b");
+    assert.ok(interceptedUrl.includes("@cf/black-forest-labs/flux-2-klein-4b"));
+    assert.ok(interceptedBody !== null);
+    assert.equal(interceptedBody.get("prompt")?.toString().includes("Refine logo colors"), true);
+    assert.equal(interceptedBody.get("width"), "1024");
+    assert.equal(interceptedBody.get("height"), "1024");
+    assert.equal(interceptedBody.get("num_steps"), null);
+    assert.equal(interceptedBody.get("steps"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.CLOUDFLARE_ACCOUNT_ID = origAccount;
+    process.env.CLOUDFLARE_API_TOKEN = origToken;
+  }
+});
+
+
 
 

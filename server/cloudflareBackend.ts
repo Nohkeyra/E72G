@@ -139,7 +139,7 @@ export async function executeCloudflareGenerateImage(
       },
       body: JSON.stringify({
         prompt: finalPrompt,
-        num_steps: 4
+        steps: 4
       })
     });
   } catch (netErr: unknown) {
