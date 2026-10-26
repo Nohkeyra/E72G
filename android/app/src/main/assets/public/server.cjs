@@ -35,7 +35,7 @@ module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
-var import_sharp = __toESM(require("sharp"), 1);
+var import_sharp2 = __toESM(require("sharp"), 1);
 
 // server/ssrfValidator.ts
 var import_dns = __toESM(require("dns"), 1);
@@ -339,7 +339,7 @@ function handleGeminiError(error, isPersonal) {
   if (isQuotaError(error)) {
     return {
       status: 429,
-      message: "Google Gemini API rate limit reached (HTTP 429). The shared API key has exceeded Google's free quota. Please add your personal Gemini API key in Settings to generate without waiting."
+      message: "Google Gemini API quota reached (HTTP 429). Image generation requires a billing-enabled Gemini API key. Please check your project billing or add your personal Gemini API key in Settings."
     };
   }
   return {
@@ -349,8 +349,15 @@ function handleGeminiError(error, isPersonal) {
 }
 var VALID_ASPECT_RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
 function normalizeAspectRatio(ratio) {
-  if (ratio && VALID_ASPECT_RATIOS.includes(ratio)) {
+  if (!ratio) return "1:1";
+  if (VALID_ASPECT_RATIOS.includes(ratio)) {
     return ratio;
+  }
+  if (ratio === "4:5" || ratio === "2:3") {
+    return "3:4";
+  }
+  if (ratio === "5:4" || ratio === "3:2") {
+    return "4:3";
   }
   return "1:1";
 }
@@ -709,6 +716,309 @@ async function executeVisionAnalysis(params) {
   return JSON.parse(response.text);
 }
 
+// server/cloudflareBackend.ts
+var import_sharp = __toESM(require("sharp"), 1);
+function resolveCloudflareCredentials(params) {
+  const accountId = (params?.accountIdOverride || process.env.CLOUDFLARE_ACCOUNT_ID || "").trim();
+  const apiToken = (params?.apiTokenOverride || process.env.CLOUDFLARE_API_TOKEN || "").trim();
+  return { accountId, apiToken };
+}
+var CLOUDFLARE_FLUX_MAX_PROMPT_LENGTH = 2048;
+function buildCloudflarePrompt(prompt, aspectRatio) {
+  if (prompt === null || prompt === void 0 || typeof prompt !== "string") {
+    throw new Error("Prompt is required and must be a non-empty string");
+  }
+  let cleanPrompt = prompt.replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  if (!cleanPrompt) {
+    throw new Error("Prompt is required and must be a non-empty string");
+  }
+  let ratioSuffix = "";
+  if (aspectRatio) {
+    const ratioMap = {
+      "1:1": "square 1:1 aspect ratio",
+      "16:9": "widescreen 16:9 aspect ratio",
+      "4:3": "standard 4:3 aspect ratio",
+      "3:4": "portrait 3:4 aspect ratio",
+      "9:16": "vertical 9:16 aspect ratio"
+    };
+    const ratioDescriptor = ratioMap[aspectRatio] || `${aspectRatio} aspect ratio`;
+    ratioSuffix = `, ${ratioDescriptor}`;
+  }
+  if (ratioSuffix && cleanPrompt.endsWith(ratioSuffix.trim())) {
+    ratioSuffix = "";
+  }
+  const initialAssembled = `${cleanPrompt}${ratioSuffix}`;
+  if (initialAssembled.length <= CLOUDFLARE_FLUX_MAX_PROMPT_LENGTH) {
+    return initialAssembled;
+  }
+  const budget = CLOUDFLARE_FLUX_MAX_PROMPT_LENGTH - ratioSuffix.length;
+  if (budget <= 0) {
+    throw new Error("Aspect ratio parameter is too long for Cloudflare FLUX.1 [schnell] prompt constraints.");
+  }
+  if (cleanPrompt.includes("NEGATIVE PROMPT:")) {
+    cleanPrompt = cleanPrompt.split("NEGATIVE PROMPT:")[0].trim();
+  }
+  cleanPrompt = cleanPrompt.replace(/## GEMINI 3.8 FLASH VISION AUDIT:\s*/gi, "Vision Audit: ").replace(/\n*-\s*Subject Morphology:\s*/gi, " Subject: ").replace(/\n*-\s*Dominant Color Palette:\s*/gi, " Colors: ").replace(/\n*-\s*Vector Outline:\s*/gi, " Shapes: ").replace(/\s+/g, " ").trim();
+  if (`${cleanPrompt}${ratioSuffix}`.length <= CLOUDFLARE_FLUX_MAX_PROMPT_LENGTH) {
+    return `${cleanPrompt}${ratioSuffix}`;
+  }
+  let targetText = cleanPrompt.slice(0, budget);
+  const lastSpaceOrSep = Math.max(
+    targetText.lastIndexOf(" "),
+    targetText.lastIndexOf(","),
+    targetText.lastIndexOf(".")
+  );
+  if (lastSpaceOrSep > Math.floor(budget * 0.5)) {
+    targetText = targetText.slice(0, lastSpaceOrSep).trim();
+  } else {
+    targetText = targetText.trim();
+  }
+  targetText = targetText.replace(/[,.;:]+$/, "").trim();
+  if (!targetText) {
+    throw new Error("Prompt exceeds the maximum allowed length of 2,048 characters for Cloudflare FLUX.1 [schnell] and could not be safely reduced.");
+  }
+  const finalPrompt = `${targetText}${ratioSuffix}`;
+  if (finalPrompt.length > CLOUDFLARE_FLUX_MAX_PROMPT_LENGTH) {
+    throw new Error("Prompt exceeds the maximum allowed length of 2,048 characters for Cloudflare FLUX.1 [schnell] and could not be safely reduced.");
+  }
+  return finalPrompt;
+}
+async function executeCloudflareGenerateImage(params) {
+  const { prompt, aspectRatio } = params;
+  const { accountId, apiToken } = resolveCloudflareCredentials(params);
+  if (!accountId || !apiToken) {
+    throw new Error(
+      "Cloudflare Workers AI credentials are not configured on the server. Please set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in server environment variables."
+    );
+  }
+  const finalPrompt = buildCloudflarePrompt(prompt, aspectRatio);
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-1-schnell`;
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        prompt: finalPrompt,
+        num_steps: 4
+      })
+    });
+  } catch (netErr) {
+    throw new Error(
+      `Failed to connect to Cloudflare Workers AI: ${netErr instanceof Error ? netErr.message : "Network error"}`
+    );
+  }
+  if (response.status === 429) {
+    throw new Error(
+      "Cloudflare Workers AI free daily quota limit or rate limit reached (HTTP 429). Please wait a moment or explicitly switch to Gemini."
+    );
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("Cloudflare Workers AI authentication failed (401/403). Please verify CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.");
+  }
+  if (!response.ok) {
+    let errorText = "";
+    try {
+      const contentType2 = response.headers.get("content-type") || "";
+      if (contentType2.includes("application/json")) {
+        const jsonRes = await response.json();
+        errorText = jsonRes.errors?.[0]?.message || jsonRes.error || JSON.stringify(jsonRes);
+      } else {
+        const rawText = await response.text();
+        errorText = rawText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+      }
+    } catch {
+      errorText = response.statusText || "Upstream request failed";
+    }
+    throw new Error(`Cloudflare Workers AI error (${response.status}): ${errorText || response.statusText}`);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  let rawBuffer;
+  if (contentType.includes("application/json")) {
+    const jsonRes = await response.json();
+    if (jsonRes.result && jsonRes.result.image) {
+      rawBuffer = Buffer.from(jsonRes.result.image, "base64");
+    } else if (jsonRes.errors && jsonRes.errors.length > 0) {
+      throw new Error(`Cloudflare Workers AI returned error: ${jsonRes.errors[0].message}`);
+    } else {
+      throw new Error("Unexpected JSON structure returned from Cloudflare Workers AI");
+    }
+  } else {
+    const arrayBuf = await response.arrayBuffer();
+    rawBuffer = Buffer.from(arrayBuf);
+  }
+  if (!rawBuffer || rawBuffer.length === 0) {
+    throw new Error("Cloudflare Workers AI returned an empty response buffer");
+  }
+  let pngBuffer = rawBuffer;
+  try {
+    const metadata = await (0, import_sharp.default)(rawBuffer).metadata();
+    if (metadata.format !== "png") {
+      pngBuffer = await (0, import_sharp.default)(rawBuffer).png().toBuffer();
+    }
+  } catch (formatErr) {
+    console.warn("Sharp failed to read image format, attempting direct PNG conversion:", formatErr);
+    pngBuffer = await (0, import_sharp.default)(rawBuffer).png().toBuffer();
+  }
+  if (pngBuffer.length < 8 || pngBuffer[0] !== 137 || pngBuffer[1] !== 80 || pngBuffer[2] !== 78 || pngBuffer[3] !== 71 || pngBuffer[4] !== 13 || pngBuffer[5] !== 10 || pngBuffer[6] !== 26 || pngBuffer[7] !== 10) {
+    throw new Error("Image buffer from Cloudflare does not contain valid PNG magic bytes");
+  }
+  const base64Png = pngBuffer.toString("base64");
+  return {
+    image: `data:image/png;base64,${base64Png}`,
+    provider: "cloudflare",
+    modelUsed: "@cf/black-forest-labs/flux-1-schnell"
+  };
+}
+function getDimensionsForAspectRatio(aspectRatio) {
+  switch (aspectRatio) {
+    case "16:9":
+      return { width: 1024, height: 576 };
+    case "4:3":
+      return { width: 1024, height: 768 };
+    case "3:4":
+      return { width: 768, height: 1024 };
+    case "9:16":
+      return { width: 576, height: 1024 };
+    case "1:1":
+    default:
+      return { width: 1024, height: 1024 };
+  }
+}
+async function executeCloudflareEditImage(params) {
+  const { prompt, aspectRatio, mimeType } = params;
+  const { accountId, apiToken } = resolveCloudflareCredentials(params);
+  if (!accountId || !apiToken) {
+    throw new Error(
+      "Cloudflare Workers AI credentials are not configured on the server. Please set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in server environment variables."
+    );
+  }
+  const finalPrompt = buildCloudflarePrompt(prompt, aspectRatio);
+  let inputBuffer;
+  if (params.imageBuffer && params.imageBuffer.length > 0) {
+    inputBuffer = params.imageBuffer;
+  } else if (params.base64Image && typeof params.base64Image === "string") {
+    const cleanB64 = params.base64Image.replace(/^data:image\/[a-zA-Z0-9+-]+;base64,/, "").trim();
+    if (!cleanB64) {
+      throw new Error("Reference image is required for Cloudflare image-to-image editing.");
+    }
+    inputBuffer = Buffer.from(cleanB64, "base64");
+  } else {
+    throw new Error("Reference image is required for Cloudflare image-to-image editing.");
+  }
+  if (!inputBuffer || inputBuffer.length === 0) {
+    throw new Error("Reference image buffer is empty or invalid.");
+  }
+  if (inputBuffer.length > 20 * 1024 * 1024) {
+    throw new Error("Reference image exceeds maximum allowed upload size of 20MB.");
+  }
+  let verifiedMime = mimeType || "image/png";
+  try {
+    const metadata = await (0, import_sharp.default)(inputBuffer).metadata();
+    if (!metadata || !metadata.format) {
+      throw new Error("Corrupted metadata");
+    }
+    if (metadata.format === "jpeg" || metadata.format === "jpg") {
+      verifiedMime = "image/jpeg";
+    } else if (metadata.format === "png") {
+      verifiedMime = "image/png";
+    } else if (metadata.format === "webp") {
+      verifiedMime = "image/webp";
+    } else if (metadata.format === "gif") {
+      verifiedMime = "image/gif";
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Unsupported or corrupted reference image format: ${msg}`);
+  }
+  const { width, height } = getDimensionsForAspectRatio(aspectRatio);
+  const formData = new FormData();
+  formData.append("prompt", finalPrompt);
+  const imageBlob = new Blob([new Uint8Array(inputBuffer)], { type: verifiedMime });
+  formData.append("image_1", imageBlob, "reference_image.png");
+  formData.append("width", String(width));
+  formData.append("height", String(height));
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`;
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`
+      },
+      body: formData
+    });
+  } catch (netErr) {
+    throw new Error(
+      `Failed to connect to Cloudflare Workers AI: ${netErr instanceof Error ? netErr.message : "Network error"}`
+    );
+  }
+  if (response.status === 429) {
+    throw new Error(
+      "Cloudflare Workers AI free daily quota limit or rate limit reached (HTTP 429). Please wait a moment or explicitly switch to Gemini."
+    );
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("Cloudflare Workers AI authentication failed (401/403). Please verify CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.");
+  }
+  if (!response.ok) {
+    let errorText = "";
+    try {
+      const contentType2 = response.headers.get("content-type") || "";
+      if (contentType2.includes("application/json")) {
+        const jsonRes = await response.json();
+        errorText = jsonRes.errors?.[0]?.message || jsonRes.error || JSON.stringify(jsonRes);
+      } else {
+        const rawText = await response.text();
+        errorText = rawText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+      }
+    } catch {
+      errorText = response.statusText || "Upstream request failed";
+    }
+    throw new Error(`Cloudflare Workers AI error (${response.status}): ${errorText || response.statusText}`);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  let rawBuffer;
+  if (contentType.includes("application/json")) {
+    const jsonRes = await response.json();
+    if (jsonRes.result && jsonRes.result.image) {
+      rawBuffer = Buffer.from(jsonRes.result.image, "base64");
+    } else if (jsonRes.errors && jsonRes.errors.length > 0) {
+      throw new Error(`Cloudflare Workers AI returned error: ${jsonRes.errors[0].message}`);
+    } else {
+      throw new Error("Unexpected JSON structure returned from Cloudflare Workers AI");
+    }
+  } else {
+    const arrayBuf = await response.arrayBuffer();
+    rawBuffer = Buffer.from(arrayBuf);
+  }
+  if (!rawBuffer || rawBuffer.length === 0) {
+    throw new Error("Cloudflare Workers AI returned an empty response buffer");
+  }
+  let pngBuffer = rawBuffer;
+  try {
+    const metadata = await (0, import_sharp.default)(rawBuffer).metadata();
+    if (metadata.format !== "png") {
+      pngBuffer = await (0, import_sharp.default)(rawBuffer).png().toBuffer();
+    }
+  } catch (formatErr) {
+    console.warn("Sharp failed to read image format, attempting direct PNG conversion:", formatErr);
+    pngBuffer = await (0, import_sharp.default)(rawBuffer).png().toBuffer();
+  }
+  if (pngBuffer.length < 8 || pngBuffer[0] !== 137 || pngBuffer[1] !== 80 || pngBuffer[2] !== 78 || pngBuffer[3] !== 71 || pngBuffer[4] !== 13 || pngBuffer[5] !== 10 || pngBuffer[6] !== 26 || pngBuffer[7] !== 10) {
+    throw new Error("Image buffer from Cloudflare does not contain valid PNG magic bytes");
+  }
+  const base64Png = pngBuffer.toString("base64");
+  return {
+    image: `data:image/png;base64,${base64Png}`,
+    provider: "cloudflare",
+    modelUsed: "@cf/black-forest-labs/flux-2-klein-4b"
+  };
+}
+
 // server.ts
 async function ensurePremiumPwaAssets() {
   const publicDir = import_path.default.join(process.cwd(), "public");
@@ -724,15 +1034,15 @@ async function ensurePremiumPwaAssets() {
   if (import_fs.default.existsSync(svgPath)) {
     try {
       if (!import_fs.default.existsSync(icon192Path)) {
-        await (0, import_sharp.default)(svgPath).resize(192, 192).png().toFile(icon192Path);
+        await (0, import_sharp2.default)(svgPath).resize(192, 192).png().toFile(icon192Path);
         console.log("Successfully generated icon-192.png");
       }
       if (!import_fs.default.existsSync(icon512Path)) {
-        await (0, import_sharp.default)(svgPath).resize(512, 512).png().toFile(icon512Path);
+        await (0, import_sharp2.default)(svgPath).resize(512, 512).png().toFile(icon512Path);
         console.log("Successfully generated icon-512.png");
       }
       if (!import_fs.default.existsSync(maskablePath)) {
-        await (0, import_sharp.default)(svgPath).resize(512, 512, { fit: "contain", background: "#09090B" }).png().toFile(maskablePath);
+        await (0, import_sharp2.default)(svgPath).resize(512, 512, { fit: "contain", background: "#09090B" }).png().toFile(maskablePath);
         console.log("Successfully generated maskable-icon-512.png");
       }
     } catch (err) {
@@ -776,7 +1086,7 @@ async function ensurePremiumPwaAssets() {
   <text x="1170" y="732" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="bold" font-size="14" fill="#09090B" text-anchor="middle">Synthesize</text>
 </svg>`.trim();
     try {
-      await (0, import_sharp.default)(Buffer.from(desktopSvg)).png().toFile(screenshotDesktopPath);
+      await (0, import_sharp2.default)(Buffer.from(desktopSvg)).png().toFile(screenshotDesktopPath);
       console.log("Successfully generated screenshot-desktop.png");
     } catch (err) {
       console.error("Error generating desktop screenshot:", err);
@@ -809,7 +1119,7 @@ async function ensurePremiumPwaAssets() {
   <text x="360" y="1195" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="bold" font-size="18" fill="#09090B" text-anchor="middle">Generate Intelligent Design</text>
 </svg>`.trim();
     try {
-      await (0, import_sharp.default)(Buffer.from(mobileSvg)).png().toFile(screenshotMobilePath);
+      await (0, import_sharp2.default)(Buffer.from(mobileSvg)).png().toFile(screenshotMobilePath);
       console.log("Successfully generated screenshot-mobile.png");
     } catch (err) {
       console.error("Error generating mobile screenshot:", err);
@@ -844,8 +1154,47 @@ function createApp() {
   app.get("/api/health", (req, res) => {
     res.json({
       status: "ok",
-      hasDefaultKey: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim())
+      hasDefaultKey: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()),
+      hasCloudflareConfigured: Boolean(
+        process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_ACCOUNT_ID.trim() && process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_API_TOKEN.trim()
+      )
     });
+  });
+  app.post("/api/cloudflare/generate-image", apiLimiter, async (req, res) => {
+    const { prompt, aspectRatio } = req.body || {};
+    try {
+      const result = await executeCloudflareGenerateImage({ prompt, aspectRatio });
+      return res.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Cloudflare image generation failed";
+      let status = 500;
+      if (message.includes("is required") || message.includes("exceeds the maximum allowed length") || message.includes("must be a non-empty string") || message.includes("could not be safely reduced") || message.includes("too long for Cloudflare")) {
+        status = 400;
+      } else if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) {
+        status = 429;
+      } else if (message.includes("401") || message.includes("403") || message.includes("authentication failed")) {
+        status = 401;
+      }
+      return res.status(status).json({ error: message });
+    }
+  });
+  app.post("/api/cloudflare/edit-image", apiLimiter, async (req, res) => {
+    const { prompt, base64Image, mimeType, aspectRatio } = req.body || {};
+    try {
+      const result = await executeCloudflareEditImage({ prompt, base64Image, mimeType, aspectRatio });
+      return res.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Cloudflare image editing failed";
+      let status = 500;
+      if (message.includes("is required") || message.includes("exceeds the maximum allowed length") || message.includes("must be a non-empty string") || message.includes("could not be safely reduced") || message.includes("too long for Cloudflare") || message.includes("Unsupported") || message.includes("corrupted") || message.includes("exceeds maximum allowed upload size") || message.includes("Reference image is required")) {
+        status = 400;
+      } else if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) {
+        status = 429;
+      } else if (message.includes("401") || message.includes("403") || message.includes("authentication failed")) {
+        status = 401;
+      }
+      return res.status(status).json({ error: message });
+    }
   });
   app.post("/api/prepare-reference", apiLimiter, async (req, res) => {
     try {
@@ -871,7 +1220,7 @@ function createApp() {
         if (typeof x !== "number" || typeof y !== "number" || typeof width !== "number" || typeof height !== "number") {
           return res.status(400).json({ error: "Invalid cropBox parameters" });
         }
-        const imageMetadata = await (0, import_sharp.default)(resolvedPath).metadata();
+        const imageMetadata = await (0, import_sharp2.default)(resolvedPath).metadata();
         if (!imageMetadata.width || !imageMetadata.height) {
           return res.status(500).json({ error: "Failed to read image dimensions" });
         }
@@ -879,7 +1228,7 @@ function createApp() {
         const safeY = Math.min(Math.max(0, Math.round(y)), imageMetadata.height - 1);
         const safeWidth = Math.min(Math.max(1, Math.round(width)), imageMetadata.width - safeX);
         const safeHeight = Math.min(Math.max(1, Math.round(height)), imageMetadata.height - safeY);
-        const croppedBuffer = await (0, import_sharp.default)(resolvedPath).extract({ left: safeX, top: safeY, width: safeWidth, height: safeHeight }).png().toBuffer();
+        const croppedBuffer = await (0, import_sharp2.default)(resolvedPath).extract({ left: safeX, top: safeY, width: safeWidth, height: safeHeight }).png().toBuffer();
         finalBase64 = croppedBuffer.toString("base64");
         finalMimeType = "image/png";
       } else if (referenceImagePath) {
