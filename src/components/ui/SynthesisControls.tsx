@@ -91,7 +91,7 @@ export const SynthesisControls: React.FC<SynthesisControlsProps> = React.memo(({
   return (
     <div className="w-full flex-shrink-0 flex flex-col transition-all duration-300 gap-3">
       {/* Provider Selector */}
-      <ProviderSelector hasReferenceImage={Boolean(uploadedImage || selectedPreset?.referenceImagePath || selectedPreset?.previewImagePath)} />
+      <ProviderSelector hasReferenceImage={Boolean(uploadedImage || selectedPreset?.referenceImagePath || selectedPreset?.sourceImagePath)} />
       
         {/* Designer Controls (Conditional) */}
       <AnimatePresence>

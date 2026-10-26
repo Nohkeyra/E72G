@@ -15,7 +15,10 @@ import {
   handleGeminiError,
   ALLOWED_IMAGE_MODELS
 } from "./server/geminiBackend";
-import { executeCloudflareGenerateImage } from "./server/cloudflareBackend";
+import {
+  executeCloudflareGenerateImage,
+  executeCloudflareEditImage
+} from "./server/cloudflareBackend";
 
 async function ensurePremiumPwaAssets() {
   const publicDir = path.join(process.cwd(), "public");
@@ -189,7 +192,50 @@ export function createApp() {
       return res.json(result);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Cloudflare image generation failed";
-      const status = message.includes("429") || message.includes("quota") ? 429 : 500;
+      let status = 500;
+      if (
+        message.includes("is required") ||
+        message.includes("exceeds the maximum allowed length") ||
+        message.includes("must be a non-empty string") ||
+        message.includes("could not be safely reduced") ||
+        message.includes("too long for Cloudflare")
+      ) {
+        status = 400;
+      } else if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) {
+        status = 429;
+      } else if (message.includes("401") || message.includes("403") || message.includes("authentication failed")) {
+        status = 401;
+      }
+      return res.status(status).json({ error: message });
+    }
+  });
+
+  // Cloudflare Workers AI FLUX.2 [klein] 4B Image-to-Image Editing
+  app.post("/api/cloudflare/edit-image", apiLimiter, async (req, res) => {
+    const { prompt, base64Image, mimeType, aspectRatio } = req.body || {};
+    try {
+      const result = await executeCloudflareEditImage({ prompt, base64Image, mimeType, aspectRatio });
+      return res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Cloudflare image editing failed";
+      let status = 500;
+      if (
+        message.includes("is required") ||
+        message.includes("exceeds the maximum allowed length") ||
+        message.includes("must be a non-empty string") ||
+        message.includes("could not be safely reduced") ||
+        message.includes("too long for Cloudflare") ||
+        message.includes("Unsupported") ||
+        message.includes("corrupted") ||
+        message.includes("exceeds maximum allowed upload size") ||
+        message.includes("Reference image is required")
+      ) {
+        status = 400;
+      } else if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) {
+        status = 429;
+      } else if (message.includes("401") || message.includes("403") || message.includes("authentication failed")) {
+        status = 401;
+      }
       return res.status(status).json({ error: message });
     }
   });

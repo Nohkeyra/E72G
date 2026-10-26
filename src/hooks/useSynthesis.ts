@@ -157,9 +157,15 @@ export function useSynthesis() {
       }
     }, timeoutDuration);
 
+    const isCloudflareProvider = selectedModel === 'cf-flux';
+    const hasGenRef = Boolean(uploadedImage || selectedPreset?.referenceImagePath || selectedPreset?.sourceImagePath);
+    const engineLabel = isCloudflareProvider
+      ? (hasGenRef ? 'Cloudflare FLUX.2 [klein] 4B' : 'Cloudflare FLUX.1 [schnell]')
+      : 'Gemini Image';
+
     addLog('Starting visual synthesis...', 'process');
     addLog('Compiling prompt and style DNA...', 'info');
-    setTimeout(() => addLog('Synthesizing image with Gemini Image engine...', 'info'), 1500);
+    setTimeout(() => addLog(`Synthesizing image with ${engineLabel} engine...`, 'info'), 1500);
 
     const currentModule = getModule(activeTab);
     
@@ -209,7 +215,7 @@ export function useSynthesis() {
       setLastFinalPrompt(finalPrompt);
 
       addDebugLog('handleGenerate: starting generation');
-      addLog('Synthesizing visual asset with Gemini Image Engine...', 'info');
+      addLog(`Synthesizing visual asset with ${engineLabel} engine...`, 'info');
       
       const modelInfo = validateModelCall(selectedModel, !!currentKey);
       

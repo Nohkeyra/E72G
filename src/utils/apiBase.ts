@@ -35,8 +35,9 @@ export function getApiBaseUrl(): string {
     }
   }
 
-  // Use import.meta.env.VITE_API_URL if configured during build/packaging
-  const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  // Use import.meta.env?.VITE_API_URL if configured during build/packaging
+  const metaEnv = (import.meta as unknown as { env?: Record<string, string> })?.env;
+  const configured = metaEnv?.VITE_API_URL?.trim();
   if (configured) {
     return trimTrailingSlash(configured);
   }

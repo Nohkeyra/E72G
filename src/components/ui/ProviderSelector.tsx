@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, AlertCircle, Cpu } from 'lucide-react';
+import { Sparkles, Cpu } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { ImageModel } from '../../services/modelRegistry';
 
@@ -61,21 +61,14 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ hasReference
         </button>
       </div>
 
-      {isCloudflare && hasReferenceImage && (
-        <div className="mt-1 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg flex flex-col gap-2 text-amber-400">
-          <div className="flex items-start gap-2">
-            <AlertCircle size={15} className="shrink-0 mt-0.5" />
-            <p className="text-[11px] leading-relaxed">
-              Cloudflare FLUX.1 [schnell] is text-to-image only and cannot edit reference images.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => handleSelectModel('gemini')}
-            className="w-full py-1.5 px-3 bg-amber-500 text-black font-bold text-[10px] uppercase tracking-wider rounded transition-opacity hover:opacity-90"
-          >
-            Switch to Gemini Image
-          </button>
+      {isCloudflare && (
+        <div className="mt-1 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-start gap-2 text-emerald-400 text-[11px] leading-relaxed">
+          <Sparkles size={14} className="shrink-0 mt-0.5" />
+          <p>
+            {hasReferenceImage
+              ? 'Using Cloudflare FLUX.2 [klein] 4B (Free) for reference image-to-image editing.'
+              : 'Using Cloudflare FLUX.1 [schnell] (Free) for text-to-image generation.'}
+          </p>
         </div>
       )}
     </div>

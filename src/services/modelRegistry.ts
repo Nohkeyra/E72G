@@ -23,11 +23,11 @@ export interface ModelInfo {
 export const modelRegistry: Record<ImageModel, ModelInfo> = {
   'cf-flux': {
     id: 'cf-flux',
-    label: 'Cloudflare FLUX.1 [schnell] (Free)',
+    label: 'Cloudflare FLUX (Free)',
     provider: 'cloudflare',
     modelId: '@cf/black-forest-labs/flux-1-schnell',
     requiresApiKey: false,
-    supportsReferenceImages: false,
+    supportsReferenceImages: true,
     previewCompatible: true,
     billingStatus: 'Free tier with quota'
   },

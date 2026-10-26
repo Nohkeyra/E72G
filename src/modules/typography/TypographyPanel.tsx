@@ -121,7 +121,7 @@ export const TypographyPanel: React.FC<TypographyPanelProps> = React.memo(({
   return (
     <div className="space-y-6 pb-24">
       {/* Provider Selector */}
-      <ProviderSelector hasReferenceImage={Boolean(selectedPreset?.referenceImagePath || selectedPreset?.previewImagePath)} />
+      <ProviderSelector hasReferenceImage={Boolean(selectedPreset?.referenceImagePath || selectedPreset?.sourceImagePath)} />
 
       {/* Input Area */}
       <motion.div 

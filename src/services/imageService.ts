@@ -13,58 +13,125 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
 
   const isCloudflare = registryEntry.provider === 'cloudflare' || providerOverride === 'cloudflare';
 
-  // 2. Reference image presence check
+  // 2. Reference image presence check (Excludes previewImagePath which is a UI thumbnail card asset)
   const hasReference = Boolean(
     base64Image ||
     preset?.sourceImagePath ||
-    preset?.referenceImagePath ||
-    preset?.previewImagePath
+    preset?.referenceImagePath
   );
 
-  // 3. Guardrail: Cloudflare FLUX does not support reference-image editing
-  if (isCloudflare && hasReference) {
-    throw new Error(
-      "Cloudflare FLUX.1 [schnell] is a text-to-image model and does not support reference-image editing or variation. Please switch provider to Gemini Image or remove the reference image to proceed."
-    );
-  }
-
-  // 4. Cloudflare Execution Path
+  // 3. Cloudflare Execution Path
   if (isCloudflare) {
     const finalPrompt = buildFinalPrompt(prompt, negativePrompt);
-    const cfRes = await fetch(apiUrl("/api/cloudflare/generate-image"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: finalPrompt,
-        aspectRatio: preset?.aspectRatio
-      }),
-      signal
-    });
 
-    if (!cfRes.ok) {
-      const errData = await cfRes.json().catch(() => ({}));
-      throw new Error(
-        errData.error || `Cloudflare image generation failed with HTTP status ${cfRes.status}`
-      );
+    if (hasReference) {
+      const { finalBase64, finalMimeType } = await prepareReferenceImageData(params, signal);
+      if (!finalBase64) {
+        throw new Error("Failed to resolve reference image for generation.");
+      }
+
+      const cfRes = await fetch(apiUrl("/api/cloudflare/edit-image"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: finalPrompt,
+          base64Image: finalBase64,
+          mimeType: finalMimeType,
+          aspectRatio: preset?.aspectRatio
+        }),
+        signal
+      });
+
+      if (!cfRes.ok) {
+        const errData = await cfRes.json().catch(() => ({}));
+        throw new Error(
+          errData.error || `Cloudflare image editing failed with HTTP status ${cfRes.status}`
+        );
+      }
+
+      const cfData = await cfRes.json();
+      if (!cfData.image) {
+        throw new Error("Cloudflare did not return image data");
+      }
+
+      return {
+        image: cfData.image,
+        provider: 'cloudflare',
+        modelUsed: cfData.modelUsed || '@cf/black-forest-labs/flux-2-klein-4b'
+      };
+    } else {
+      const cfRes = await fetch(apiUrl("/api/cloudflare/generate-image"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: finalPrompt,
+          aspectRatio: preset?.aspectRatio
+        }),
+        signal
+      });
+
+      if (!cfRes.ok) {
+        const errData = await cfRes.json().catch(() => ({}));
+        throw new Error(
+          errData.error || `Cloudflare image generation failed with HTTP status ${cfRes.status}`
+        );
+      }
+
+      const cfData = await cfRes.json();
+      if (!cfData.image) {
+        throw new Error("Cloudflare did not return image data");
+      }
+
+      return {
+        image: cfData.image,
+        provider: 'cloudflare',
+        modelUsed: cfData.modelUsed || '@cf/black-forest-labs/flux-1-schnell'
+      };
     }
-
-    const cfData = await cfRes.json();
-    if (!cfData.image) {
-      throw new Error("Cloudflare did not return image data");
-    }
-
-    return {
-      image: cfData.image,
-      provider: 'cloudflare',
-      modelUsed: cfData.model || '@cf/black-forest-labs/flux-1-schnell'
-    };
   }
 
-  // 5. Google Gemini Execution Path
-  let finalBase64 = base64Image;
-  let finalMimeType = params.mimeType;
+  // 4. Google Gemini Execution Path
+  const { finalBase64, finalMimeType } = await prepareReferenceImageData(params, signal);
+  if (hasReference && !finalBase64) {
+    throw new Error("Failed to resolve reference image for generation.");
+  }
 
-  if (!finalBase64 && (preset?.sourceImagePath || preset?.referenceImagePath || preset?.previewImagePath)) {
+  const actualGeminiModel = registryEntry.provider === 'google_gemini' ? registryEntry.modelId : 'gemini-3.1-flash-lite-image';
+
+  const result = await callGemini({
+    model: actualGeminiModel,
+    prompt: buildFinalPrompt(prompt, negativePrompt),
+    base64Image: finalBase64,
+    mimeType: finalMimeType,
+    aspectRatio: preset?.aspectRatio,
+    apiKeyOverride,
+    signal
+  });
+
+  if (result.image) {
+    return { 
+      image: result.image, 
+      provider: 'google_gemini', 
+      modelUsed: result.modelUsed 
+    };
+  } else {
+    throw new Error(result.text || "Gemini returned text only");
+  }
+};
+
+export function buildFinalPrompt(base: string, neg: string): string {
+  const maxLen = 4000;
+  const compact = (text: string) => (text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (!neg) return compact(base).slice(0, maxLen);
+  return compact(`${base}\n\nNEGATIVE PROMPT:\n${neg}`).slice(0, maxLen);
+}
+
+export async function prepareReferenceImageData(params: any, signal?: AbortSignal) {
+  const { base64Image, mimeType, preset } = params;
+  let finalBase64 = base64Image;
+  let finalMimeType = mimeType;
+
+  if (!finalBase64 && (preset?.sourceImagePath || preset?.referenceImagePath)) {
     try {
       if (preset.cropBox && preset.sourceImagePath) {
         try {
@@ -84,7 +151,7 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 sourceImagePath: preset.sourceImagePath,
-                referenceImagePath: preset.referenceImagePath || preset.previewImagePath,
+                referenceImagePath: preset.referenceImagePath,
                 cropBox: preset.cropBox
               }),
               signal
@@ -99,7 +166,7 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
           }
         }
       } else {
-        const imgPath = preset.referenceImagePath || preset.previewImagePath;
+        const imgPath = preset.referenceImagePath || preset.sourceImagePath;
         if (imgPath) {
           try {
             const res = await fetch(imgPath, { signal });
@@ -161,32 +228,5 @@ export const generateImage = async (params: any, signal?: AbortSignal) => {
     }
   }
 
-  const actualGeminiModel = registryEntry.provider === 'google_gemini' ? registryEntry.modelId : 'gemini-3.1-flash-lite-image';
-
-  const result = await callGemini({
-    model: actualGeminiModel,
-    prompt: buildFinalPrompt(prompt, negativePrompt),
-    base64Image: finalBase64,
-    mimeType: finalMimeType,
-    aspectRatio: preset?.aspectRatio,
-    apiKeyOverride,
-    signal
-  });
-
-  if (result.image) {
-    return { 
-      image: result.image, 
-      provider: 'google_gemini', 
-      modelUsed: result.modelUsed 
-    };
-  } else {
-    throw new Error(result.text || "Gemini returned text only");
-  }
-};
-
-export function buildFinalPrompt(base: string, neg: string): string {
-  const maxLen = 4000;
-  const compact = (text: string) => (text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-  if (!neg) return compact(base).slice(0, maxLen);
-  return compact(`${base}\n\nNEGATIVE PROMPT:\n${neg}`).slice(0, maxLen);
+  return { finalBase64, finalMimeType };
 }
