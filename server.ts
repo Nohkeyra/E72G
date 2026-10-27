@@ -4,8 +4,8 @@ import fs from "fs";
 import sharp from "sharp";
 import { fetchSafeImage } from "./server/ssrfValidator";
 import { createRateLimiter } from "./server/rateLimiter";
-import { VectorAnalysisError } from "./server/geminiBackend";
 import {
+  VectorAnalysisError,
   executeCloudflareGenerateImage,
   executeCloudflareEditImage,
   executeCloudflareAnalyzeVector

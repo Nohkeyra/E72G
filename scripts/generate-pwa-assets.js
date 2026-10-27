@@ -37,11 +37,33 @@ async function generatePwaAssets() {
       await sharp(svgPath)
         .resize(512, 512, {
           fit: 'contain',
-          background: '#09090B'
+          background: '#000000'
         })
         .png()
         .toFile(maskablePath);
       console.log('✓ Successfully generated maskable-icon-512.png');
+
+      // 3.5. Generate Android Mipmap Launcher Icons
+      const mipmaps = [
+        { dir: 'mipmap-mdpi', size: 48, fgSize: 108 },
+        { dir: 'mipmap-hdpi', size: 72, fgSize: 108 },
+        { dir: 'mipmap-xhdpi', size: 96, fgSize: 216 },
+        { dir: 'mipmap-xxhdpi', size: 144, fgSize: 324 },
+        { dir: 'mipmap-xxxhdpi', size: 192, fgSize: 432 }
+      ];
+
+      const resDir = path.join(process.cwd(), 'android', 'app', 'src', 'main', 'res');
+      if (fs.existsSync(resDir)) {
+        for (const m of mipmaps) {
+          const targetFolder = path.join(resDir, m.dir);
+          if (fs.existsSync(targetFolder)) {
+            await sharp(svgPath).resize(m.size, m.size).png().toFile(path.join(targetFolder, 'ic_launcher.png'));
+            await sharp(svgPath).resize(m.size, m.size).png().toFile(path.join(targetFolder, 'ic_launcher_round.png'));
+            await sharp(svgPath).resize(m.fgSize, m.fgSize).png().toFile(path.join(targetFolder, 'ic_launcher_foreground.png'));
+          }
+        }
+        console.log('✓ Successfully updated Android mipmap launcher icons');
+      }
     } catch (err) {
       console.error('Error generating icons:', err);
     }

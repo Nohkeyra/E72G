@@ -1,5 +1,16 @@
-import type { GeminiAnalysisResult } from "../services/GeminiVisionHandler";
 import type { AspectRatio, Preset } from "./presets";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export interface GeminiAnalysisResult {
+  subjectName?: string;
+  description?: string;
+  silhouette?: string;
+  distinctiveDetails?: string;
+  colors?: string;
+  shapes?: string;
+  vectorAdvice?: string;
+  [key: string]: any;
+}
 
 export type EditOperation =
   | "remove"

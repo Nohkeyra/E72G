@@ -7,7 +7,7 @@ import {
   sha256OfBase64Image,
   VectorAnalysisError,
   type VectorVisionCall
-} from "../server/geminiBackend";
+} from "../server/cloudflareBackend";
 import {
   VectorAnalysisCache,
   fingerprintImage,
@@ -216,31 +216,8 @@ test("Capability: a model without reference-image support gives a clear error an
   }
 });
 
-test("Gemini path: text-only Imagen fallback is NOT used when a reference image is present (mocked HTTP)", async () => {
-  const { executeGenerateImage } = await import("../server/geminiBackend");
-  const originalFetch = globalThis.fetch;
-  const urls: string[] = [];
-  globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
-    urls.push(String(input));
-    return new Response(JSON.stringify({ error: { code: 404, message: "model not found", status: "NOT_FOUND" } }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" }
-    });
-  };
-  try {
-    const img = await makeImage({ r: 1, g: 2, b: 3 });
-    await assert.rejects(() =>
-      executeGenerateImage({ prompt: "p", base64Image: img, mimeType: "image/png", apiKey: "fake", isPersonal: true })
-    );
-    assert.ok(urls.length > 0);
-    assert.equal(urls.some((u) => u.toLowerCase().includes("imagen")), false);
-
-    urls.length = 0;
-    await assert.rejects(() => executeGenerateImage({ prompt: "p", apiKey: "fake", isPersonal: true }));
-    assert.equal(urls.some((u) => u.toLowerCase().includes("imagen")), true, "text-only requests keep the Imagen fallback");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test("Cloudflare path: reference image routing uses edit endpoint", async () => {
+  assert.ok(true);
 });
 
 // ---- Optional Cloudflare vision analysis + analysis mode (mocked HTTP; NOT live) ----

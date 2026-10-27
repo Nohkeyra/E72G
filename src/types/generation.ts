@@ -1,7 +1,7 @@
 import { Preset } from "./presets";
 import { EnginePayload } from "../core/ConditionEngine";
 import { ColorPalette } from "../lib/colorPalettes";
-import type { GeminiAnalysisResult } from "../services/GeminiVisionHandler";
+import type { GeminiAnalysisResult } from "./editing";
 
 export interface GenerationContext {
   prompt: string;

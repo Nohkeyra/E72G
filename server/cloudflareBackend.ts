@@ -1,6 +1,119 @@
 import sharp from "sharp";
-import { executeAnalyzeVector } from "./geminiBackend";
-import type { VectorAnalysisResult, VectorVisionCall } from "./geminiBackend";
+import crypto from "crypto";
+
+export interface VectorAnalysisResult {
+  subjectName: string;
+  visualDescriptor: string;
+  distinctiveTraits: string[];
+}
+
+export type VectorVisionCall = (
+  parts: Array<{ inlineData?: { data: string; mimeType: string }; text?: string }>
+) => Promise<string>;
+
+export class VectorAnalysisError extends Error {
+  code: string;
+  observedSubject?: string;
+  constructor(message: string, code: string, observedSubject?: string) {
+    super(message);
+    this.name = "VectorAnalysisError";
+    this.code = code;
+    this.observedSubject = observedSubject;
+  }
+}
+
+export function sha256OfBase64Image(dataUrlOrBase64: string): string {
+  const raw = dataUrlOrBase64.includes(",") ? dataUrlOrBase64.split(",")[1] : dataUrlOrBase64;
+  return crypto.createHash("sha256").update(Buffer.from(raw, "base64")).digest("hex");
+}
+
+export function parseVectorAnalysisText(text: string): VectorAnalysisResult {
+  let subjectName = "";
+  let visualDescriptor = "";
+  let distinctiveTraits: string[] = [];
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      subjectName = parsed.subjectName || parsed.observedSubject || "";
+      visualDescriptor = parsed.visualDescriptor || parsed.description || "";
+      if (Array.isArray(parsed.distinctiveTraits)) {
+        distinctiveTraits = parsed.distinctiveTraits;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!subjectName) {
+    const subjMatch = text.match(/SUBJECT:\s*([^\n]+)/i);
+    if (subjMatch) subjectName = subjMatch[1].trim();
+  }
+  if (!visualDescriptor) {
+    const descMatch = text.match(/DESCRIPTION:\s*([^\n]+)/i);
+    if (descMatch) visualDescriptor = descMatch[1].trim();
+  }
+
+  if (!subjectName && !visualDescriptor) {
+    throw new VectorAnalysisError("Unparseable analysis text", "unparseable");
+  }
+
+  return {
+    subjectName: subjectName || "Subject",
+    visualDescriptor: visualDescriptor || text.slice(0, 100),
+    distinctiveTraits
+  };
+}
+
+export async function executeAnalyzeVector(
+  params: { base64Image: string; mimeType: string; apiKey?: string },
+  visionCall: VectorVisionCall
+): Promise<VectorAnalysisResult & { imageSha256: string }> {
+  const raw = params.base64Image.includes(",") ? params.base64Image.split(",")[1] : params.base64Image;
+  const imageBuffer = Buffer.from(raw, "base64");
+  const imageSha256 = crypto.createHash("sha256").update(imageBuffer).digest("hex");
+
+  const rawText = await visionCall([
+    { inlineData: { data: raw, mimeType: params.mimeType } },
+    { text: "Analyze subject" }
+  ]);
+
+  const parsed = parseVectorAnalysisText(rawText);
+
+  // Verification step
+  const verificationRaw = await visionCall([
+    { inlineData: { data: raw, mimeType: params.mimeType } },
+    { text: `Verify if subject "${parsed.subjectName}" matches the image.` }
+  ]);
+
+  let verificationJson: { observedSubject?: string; matches?: boolean } | null = null;
+  const jsonMatch = verificationRaw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      verificationJson = JSON.parse(jsonMatch[0]);
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!verificationJson || typeof verificationJson.matches !== "boolean") {
+    throw new VectorAnalysisError("Unreadable verification response", "unparseable");
+  }
+
+  if (verificationJson.matches === false) {
+    throw new VectorAnalysisError(
+      `Analysis inconsistency detected`,
+      "inconsistent",
+      verificationJson.observedSubject || parsed.subjectName
+    );
+  }
+
+  return {
+    ...parsed,
+    imageSha256
+  };
+}
 
 export interface CloudflareGenerateParams {
   prompt: string;
@@ -597,7 +710,7 @@ export function buildCloudflareVisionCall(accountId: string, apiToken: string): 
             { role: "system", content: "You are a precise visual analyst. Describe only what is visible." },
             { role: "user", content: text }
           ],
-          image: `data:${inline.mimeType};base64,${inline.data}`,
+          image: inline.data.startsWith("data:") ? inline.data : `data:${inline.mimeType};base64,${inline.data}`,
           max_tokens: 1024
         }),
         signal: controller.signal

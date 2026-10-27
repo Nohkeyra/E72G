@@ -257,467 +257,86 @@ function createRateLimiter(options) {
   };
 }
 
-// server/geminiBackend.ts
-var import_genai = require("@google/genai");
-function resolveApiKey(req) {
-  const headerKey = req.headers["x-gemini-api-key"];
-  const personalKey = typeof headerKey === "string" ? headerKey.trim() : "";
-  if (personalKey) {
-    return { key: personalKey, isPersonal: true };
-  }
-  const defaultKey = (process.env.GEMINI_API_KEY || "").trim();
-  return { key: defaultKey, isPersonal: false };
-}
-function createAiClient(apiKey) {
-  return new import_genai.GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build-elite72"
-      }
-    }
-  });
-}
-var ALLOWED_IMAGE_MODELS = /* @__PURE__ */ new Set([
-  "gemini-3.1-flash-lite-image",
-  "gemini-nano-banana-2.1",
-  "gemini-3-pro-image",
-  "imagen-3.0-generate-002",
-  // Frontend aliases mapped to gemini-3.1-flash-lite-image
-  "gemini",
-  "gemini-flash",
-  "gemini-image"
-]);
-function mapImageModel(model) {
-  if (!model) return "gemini-3.1-flash-lite-image";
-  if (model === "gemini" || model === "gemini-flash" || model === "gemini-image") {
-    return "gemini-3.1-flash-lite-image";
-  }
-  return model;
-}
-function isAuthError(error) {
-  if (!error) return false;
-  const err = error;
-  const msg = (err.message || String(error)).toUpperCase();
-  const status = err.status || err.statusCode || err.code || err.response?.status;
-  return status === 401 || status === "401" || status === 403 || status === "403" || msg.includes("401") || msg.includes("API_KEY_INVALID") || msg.includes("API KEY NOT VALID") || msg.includes("INVALID API KEY") || msg.includes("UNAUTHENTICATED") || msg.includes("PERMISSION_DENIED");
-}
-function isQuotaError(error) {
-  if (!error) return false;
-  const err = error;
-  const msg = (err.message || String(error)).toUpperCase();
-  const status = err.status || err.statusCode || err.code || err.response?.status;
-  return status === 429 || status === "429" || msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("RATE LIMIT") || msg.includes("QUOTA EXCEEDED");
-}
-function handleGeminiError(error, isPersonal) {
-  const err = error;
-  const rawMsg = err?.message || String(error);
-  if (isPersonal) {
-    if (isAuthError(error)) {
-      return {
-        status: 401,
-        message: "Invalid personal Gemini API key. Please check your key in Settings."
-      };
-    }
-    if (isQuotaError(error)) {
-      return {
-        status: 429,
-        message: "Personal Gemini API key quota or rate limit exceeded (429). Please check your Google AI Studio quota."
-      };
-    }
-    return {
-      status: 500,
-      message: `Personal key generation error: ${rawMsg.replace(/AIza[0-9A-Za-z-_]{20,}/g, "[REDACTED]")}`
-    };
-  }
-  if (isAuthError(error)) {
-    return {
-      status: 502,
-      message: "Server default Gemini API key authentication failed. Please check server configuration or provide a personal key in Settings."
-    };
-  }
-  if (isQuotaError(error)) {
-    return {
-      status: 429,
-      message: "Google Gemini API quota reached (HTTP 429). Image generation requires a billing-enabled Gemini API key. Please check your project billing or add your personal Gemini API key in Settings."
-    };
-  }
-  return {
-    status: 500,
-    message: `Synthesis engine error: ${rawMsg.replace(/AIza[0-9A-Za-z-_]{20,}/g, "[REDACTED]")}`
-  };
-}
-var VALID_ASPECT_RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
-function normalizeAspectRatio(ratio) {
-  if (!ratio) return "1:1";
-  if (VALID_ASPECT_RATIOS.includes(ratio)) {
-    return ratio;
-  }
-  if (ratio === "4:5" || ratio === "2:3") {
-    return "3:4";
-  }
-  if (ratio === "5:4" || ratio === "3:2") {
-    return "4:3";
-  }
-  return "1:1";
-}
-var VORTEX_SYSTEM_INSTRUCTION = `[IDEOGRAM 3.0 / VORTEX RENDERING ENGINE]
-[ROLE: ELITE GRAPHIC DESIGNER & ARCHITECTURAL RENDERER]
-
-You are a high-performance visual synthesis engine specialized in extreme-fidelity graphic identity, layout design, and typography.
-Your primary mandate is LITERAL TRANSLATION of the provided concept into a professional visual asset.
-
-OPERATIONAL PARAMETERS:
-1. IMAGE-STYLE COUPLING: If a reference image is provided, your MISSION-CRITICAL task is to synthesize the final output by grafting the new content onto the visual DNA of the reference. Maintain lighting, material, and compositional properties of the reference.
-2. LITERAL FIDELITY: Follow every keyword in the prompt with 100% precision. Zero creative drift unless requested.
-3. CINEMATIC AUTHORITY: Use professional studio lighting (softbox, rim, backlighting) and intentional focal depth.
-4. MATERIAL INTEGRITY: Physics-accurate material representation (Glass, Chrome, Matte, Liquid, Iridescent).
-5. COMPOSITIONAL INTENT: Subject-first hierarchy. Rule of thirds or centered symmetry based on type.
-
-[TYPOGRAPHY_LOGIC]: When generating text or layout coordinates, maintain razor-sharp font edges. Verify character count with extreme precision. 
-If 3D is requested, use high IOR (Index of Refraction) and caustic reflections. 
-If 2D is requested, use vector-smooth curves and clean silhouettes.`;
-function extractImageFromResponse(response) {
-  const candidates = response.candidates || [];
-  for (const candidate of candidates) {
-    const parts = candidate.content?.parts || [];
-    for (const part of parts) {
-      if (part.inlineData?.data) {
-        const mime = part.inlineData.mimeType || "image/png";
-        return `data:${mime};base64,${part.inlineData.data}`;
-      }
-    }
-  }
-  const text = response.text || "";
-  if (text) {
-    const dataUriMatch = text.match(/data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+/);
-    if (dataUriMatch) {
-      return dataUriMatch[0];
-    }
-  }
-  return null;
-}
-async function executeGenerateImage(params) {
-  const { model, prompt, base64Image, mimeType, aspectRatio, apiKey, isPersonal } = params;
-  if (!apiKey) {
-    throw new Error(isPersonal ? "Missing personal API key" : "Server GEMINI_API_KEY is not configured");
-  }
-  const ai = createAiClient(apiKey);
-  const selectedAspectRatio = normalizeAspectRatio(aspectRatio);
-  const mappedModel = mapImageModel(model);
-  const parts = [];
-  if (base64Image && mimeType) {
-    const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
-    parts.push({
-      inlineData: {
-        data: formattedBase64,
-        mimeType
-      }
-    });
-    parts.push({
-      text: `[STYLE_REFERENCE_DETECTED] Follow the visual DNA of the attached reference image.
-[CONTENT_INSTRUCTION]: ${prompt}`
-    });
-  } else {
-    parts.push({ text: prompt });
-  }
-  const targetModels = [
-    mappedModel,
-    "gemini-3.1-flash-lite-image",
-    "gemini-nano-banana-2.1",
-    "gemini-3-pro-image"
-  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
-  let lastError = null;
-  for (const targetModel of targetModels) {
-    try {
-      let response = null;
-      try {
-        response = await ai.models.generateContent({
-          model: targetModel,
-          contents: { parts },
-          config: {
-            systemInstruction: VORTEX_SYSTEM_INSTRUCTION,
-            imageConfig: {
-              aspectRatio: selectedAspectRatio
-            }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          }
-        });
-      } catch (modalityErr) {
-        if (isAuthError(modalityErr) || isQuotaError(modalityErr)) {
-          throw modalityErr;
-        }
-        response = await ai.models.generateContent({
-          model: targetModel,
-          contents: { parts },
-          config: {
-            systemInstruction: VORTEX_SYSTEM_INSTRUCTION,
-            responseModalities: ["IMAGE", "TEXT"]
-          }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        });
-      }
-      if (response) {
-        const extracted = extractImageFromResponse(response);
-        if (extracted) {
-          return { image: extracted, modelUsed: targetModel };
-        }
-      }
-    } catch (err) {
-      lastError = err;
-      if (isAuthError(err)) {
-        throw err;
-      }
-      if (isQuotaError(err)) {
-        throw err;
-      }
-      console.warn(`[GEMINI BACKEND] Model '${targetModel}' attempt skipped:`, err instanceof Error ? err.message : err);
-    }
-  }
-  try {
-    const imagenFallback = await ai.models.generateImages({
-      model: "imagen-3.0-generate-002",
-      prompt,
-      config: {
-        numberOfImages: 1,
-        outputMimeType: "image/jpeg",
-        aspectRatio: selectedAspectRatio
-      }
-    });
-    if (imagenFallback.generatedImages?.[0]?.image?.imageBytes) {
-      const b64 = imagenFallback.generatedImages[0].image.imageBytes;
-      return {
-        image: `data:image/jpeg;base64,${b64}`,
-        modelUsed: "imagen-3.0-generate-002"
-      };
-    }
-  } catch (imgErr) {
-    if (isAuthError(imgErr) || isQuotaError(imgErr)) {
-      throw imgErr;
-    }
-    console.warn("[GEMINI BACKEND] Imagen 3 fallback skipped:", imgErr);
-  }
-  if (lastError) {
-    throw lastError;
-  }
-  throw new Error("Gemini Image engine was unable to produce an image. Please verify your prompt or API key.");
-}
-async function executeVerifyKey(apiKey, isPersonal) {
-  if (!apiKey) {
-    return {
-      success: false,
-      latency: 0,
-      details: isPersonal ? "No personal key provided" : "Server default key is not configured"
-    };
-  }
-  const start = Date.now();
-  try {
-    const ai = createAiClient(apiKey);
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: "ping"
-    });
-    const latency = Date.now() - start;
-    if (response?.text) {
-      return {
-        success: true,
-        latency,
-        details: isPersonal ? "Personal Gemini API key verified" : "Server default Gemini API key verified"
-      };
-    }
-    return {
-      success: false,
-      latency,
-      details: "Empty response from Gemini API"
-    };
-  } catch (err) {
-    const latency = Date.now() - start;
-    if (isAuthError(err)) {
-      return { success: false, latency, details: "Invalid API Key" };
-    }
-    if (isQuotaError(err)) {
-      return { success: false, latency, details: "Rate Limited (HTTP 429)" };
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    return { success: false, latency, details: msg.replace(/AIza[0-9A-Za-z-_]{20,}/g, "[REDACTED]") };
-  }
-}
-async function executeAnalyze(params) {
-  const { base64Image, mimeType, activeTab = "vectorize", apiKey } = params;
-  const ai = createAiClient(apiKey);
-  const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
-  const promptText = activeTab === "vectorize" ? `Role: You are a Vector Graphics & Visual Morphology Auditor. Analyze the uploaded reference image for precision 2D vectorization.
-Extract:
-1. "name": A concise vector style name (e.g. "Flat Geometric Vector", "Minimalist Dual-Tone Vector", "Modern Mascot Vector")
-2. "basePrompt": A descriptive, high-precision visual directive capturing the subject's exact silhouette, geometry, dominant forms, and flat color blocks for vector generation
-3. "negativePrompt": Elements to strictly avoid (photorealistic shading, grainy textures, realistic 3D volume, photo noise, complex gradients)
-4. "aspectRatio": "1:1"
-5. "dnaWeight": 95
-6. "textureIntensity": 0
-Return strict JSON: { "name": string, "basePrompt": string, "negativePrompt": string, "aspectRatio": "1:1", "dnaWeight": number, "textureIntensity": number }` : `Role: You are a Structural Design Auditor. Define the artistic style as a JSON object. Focus on ${activeTab === "logo design" ? "LOGO DESIGN" : "GRAPHIC ILLUSTRATION"} elements.
-Return a JSON object: { "name": string, "basePrompt": string, "negativePrompt": string, "aspectRatio": "1:1", "dnaWeight": number, "textureIntensity": number }`;
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            data: formattedBase64,
-            mimeType: mimeType || "image/png"
-          }
-        },
-        { text: promptText }
-      ]
-    },
-    config: {
-      systemInstruction: "You are an expert design auditor who analyzes images and outputs strict JSON specifications."
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  });
-  const text = response.text || "";
-  if (!text) throw new Error("No analysis generated");
-  const parseJson = (str) => {
-    try {
-      return JSON.parse(str);
-    } catch {
-      const match = str.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (match && match[1]) return JSON.parse(match[1]);
-      throw new Error("Failed to parse JSON response from analysis");
-    }
-  };
-  return parseJson(text);
-}
-async function executeAnalyzeVector(params) {
-  const { base64Image, mimeType, apiKey } = params;
-  const ai = createAiClient(apiKey);
-  const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            data: formattedBase64,
-            mimeType: mimeType || "image/png"
-          }
-        },
-        {
-          text: `Analyze this image for 2D vector conversion.
-Provide a concise breakdown formatted as:
-DESCRIPTION: [Describe the primary subject, pose, silhouette, and composition]
-COLORS: [List the 3-5 dominant colors in hex or clean color names]
-SHAPES: [List key geometric forms and outline characteristics]`
-        }
-      ]
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  });
-  const text = response.text || "";
-  if (!text) return null;
-  const descMatch = text.match(/DESCRIPTION:\s*([^\n]+)/i);
-  const colorsMatch = text.match(/COLORS:\s*([^\n]+)/i);
-  const shapesMatch = text.match(/SHAPES:\s*([^\n]+)/i);
-  return {
-    description: descMatch ? descMatch[1].trim() : text.slice(0, 200),
-    colors: colorsMatch ? colorsMatch[1].trim() : "Flat solid palette",
-    shapes: shapesMatch ? shapesMatch[1].trim() : "Clean 2D vector paths"
-  };
-}
-async function executeRefineTypography(params) {
-  const { base64Image, mimeType, originalPrompt, targetText, targetPreset, apiKey } = params;
-  const ai = createAiClient(apiKey);
-  const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            data: formattedBase64,
-            mimeType: mimeType || "image/png"
-          }
-        },
-        {
-          text: `Role: Typographic Quality Auditor. Refine the prompt for better spelling of "${targetText}" and matching "${targetPreset}" style. Original: ${originalPrompt}`
-        }
-      ]
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  });
-  return { refinedPrompt: response.text || originalPrompt };
-}
-async function executeVisionAnalysis(params) {
-  const { base64Image, mimeType, apiKey } = params;
-  const ai = createAiClient(apiKey);
-  const formattedBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            data: formattedBase64,
-            mimeType
-          }
-        },
-        {
-          text: `Analyze this image and return a JSON object with the following structure:
-          {
-            "global_context": {
-              "scene_description": "string",
-              "color_palette": { "dominant_hex_estimates": ["#HEX1", "#HEX2"] }
-            },
-            "objects": [
-              { "id": "obj_001", "label": "string", "pose_orientation": "string", "box_2d": [0, 0, 1000, 1000] }
-            ]
-          }`
-        }
-      ]
-    },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: import_genai.Type.OBJECT,
-        properties: {
-          global_context: {
-            type: import_genai.Type.OBJECT,
-            properties: {
-              scene_description: { type: import_genai.Type.STRING },
-              color_palette: {
-                type: import_genai.Type.OBJECT,
-                properties: {
-                  dominant_hex_estimates: {
-                    type: import_genai.Type.ARRAY,
-                    items: { type: import_genai.Type.STRING }
-                  }
-                }
-              }
-            }
-          },
-          objects: {
-            type: import_genai.Type.ARRAY,
-            items: {
-              type: import_genai.Type.OBJECT,
-              properties: {
-                id: { type: import_genai.Type.STRING },
-                label: { type: import_genai.Type.STRING },
-                pose_orientation: { type: import_genai.Type.STRING },
-                box_2d: {
-                  type: import_genai.Type.ARRAY,
-                  items: { type: import_genai.Type.NUMBER }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  });
-  return JSON.parse(response.text);
-}
-
 // server/cloudflareBackend.ts
 var import_sharp = __toESM(require("sharp"), 1);
+var import_crypto = __toESM(require("crypto"), 1);
+var VectorAnalysisError = class extends Error {
+  constructor(message, code, observedSubject) {
+    super(message);
+    this.name = "VectorAnalysisError";
+    this.code = code;
+    this.observedSubject = observedSubject;
+  }
+};
+function parseVectorAnalysisText(text) {
+  let subjectName = "";
+  let visualDescriptor = "";
+  let distinctiveTraits = [];
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      subjectName = parsed.subjectName || parsed.observedSubject || "";
+      visualDescriptor = parsed.visualDescriptor || parsed.description || "";
+      if (Array.isArray(parsed.distinctiveTraits)) {
+        distinctiveTraits = parsed.distinctiveTraits;
+      }
+    } catch {
+    }
+  }
+  if (!subjectName) {
+    const subjMatch = text.match(/SUBJECT:\s*([^\n]+)/i);
+    if (subjMatch) subjectName = subjMatch[1].trim();
+  }
+  if (!visualDescriptor) {
+    const descMatch = text.match(/DESCRIPTION:\s*([^\n]+)/i);
+    if (descMatch) visualDescriptor = descMatch[1].trim();
+  }
+  if (!subjectName && !visualDescriptor) {
+    throw new VectorAnalysisError("Unparseable analysis text", "unparseable");
+  }
+  return {
+    subjectName: subjectName || "Subject",
+    visualDescriptor: visualDescriptor || text.slice(0, 100),
+    distinctiveTraits
+  };
+}
+async function executeAnalyzeVector(params, visionCall) {
+  const raw = params.base64Image.includes(",") ? params.base64Image.split(",")[1] : params.base64Image;
+  const imageBuffer = Buffer.from(raw, "base64");
+  const imageSha256 = import_crypto.default.createHash("sha256").update(imageBuffer).digest("hex");
+  const rawText = await visionCall([
+    { inlineData: { data: raw, mimeType: params.mimeType } },
+    { text: "Analyze subject" }
+  ]);
+  const parsed = parseVectorAnalysisText(rawText);
+  const verificationRaw = await visionCall([
+    { inlineData: { data: raw, mimeType: params.mimeType } },
+    { text: `Verify if subject "${parsed.subjectName}" matches the image.` }
+  ]);
+  let verificationJson = null;
+  const jsonMatch = verificationRaw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      verificationJson = JSON.parse(jsonMatch[0]);
+    } catch {
+    }
+  }
+  if (!verificationJson || typeof verificationJson.matches !== "boolean") {
+    throw new VectorAnalysisError("Unreadable verification response", "unparseable");
+  }
+  if (verificationJson.matches === false) {
+    throw new VectorAnalysisError(
+      `Analysis inconsistency detected`,
+      "inconsistent",
+      verificationJson.observedSubject || parsed.subjectName
+    );
+  }
+  return {
+    ...parsed,
+    imageSha256
+  };
+}
 function resolveCloudflareCredentials(params) {
   const accountId = (params?.accountIdOverride || process.env.CLOUDFLARE_ACCOUNT_ID || "").trim();
   const apiToken = (params?.apiTokenOverride || process.env.CLOUDFLARE_API_TOKEN || "").trim();
@@ -758,7 +377,7 @@ function buildCloudflarePrompt(prompt, aspectRatio) {
   if (cleanPrompt.includes("NEGATIVE PROMPT:")) {
     cleanPrompt = cleanPrompt.split("NEGATIVE PROMPT:")[0].trim();
   }
-  cleanPrompt = cleanPrompt.replace(/## GEMINI 3.8 FLASH VISION AUDIT:\s*/gi, "Vision Audit: ").replace(/\n*-\s*Subject Morphology:\s*/gi, " Subject: ").replace(/\n*-\s*Dominant Color Palette:\s*/gi, " Colors: ").replace(/\n*-\s*Vector Outline:\s*/gi, " Shapes: ").replace(/\s+/g, " ").trim();
+  cleanPrompt = cleanPrompt.replace(/## (?:GEMINI [0-9.]+ FLASH )?VISION AUDIT:\s*/gi, "Vision Audit: ").replace(/## SUBJECT MORPHOLOGY & REFERENCE ANCHORS:\s*/gi, "Anchors: ").replace(/\n*-\s*Subject (?:Morphology|Identification):\s*/gi, " Subject: ").replace(/\n*-\s*Pose & Structure:\s*/gi, " Pose: ").replace(/\n*-\s*Silhouette & Contours:\s*/gi, " Silhouette: ").replace(/\n*-\s*Distinctive Details[^:]*:\s*/gi, " Details: ").replace(/\n*-\s*Dominant Color Palette:\s*|\n*-\s*Color Scheme:\s*/gi, " Colors: ").replace(/\n*-\s*Vector Outline:\s*|\n*-\s*Geometric & Line Architecture:\s*/gi, " Shapes: ").replace(/\n*-\s*Vector Translation Guide:\s*/gi, " Vector Guide: ").replace(/\s+/g, " ").trim();
   if (`${cleanPrompt}${ratioSuffix}`.length <= CLOUDFLARE_FLUX_MAX_PROMPT_LENGTH) {
     return `${cleanPrompt}${ratioSuffix}`;
   }
@@ -803,7 +422,7 @@ async function executeCloudflareGenerateImage(params) {
       },
       body: JSON.stringify({
         prompt: finalPrompt,
-        num_steps: 4
+        steps: 4
       })
     });
   } catch (netErr) {
@@ -888,8 +507,20 @@ function getDimensionsForAspectRatio(aspectRatio) {
       return { width: 1024, height: 1024 };
   }
 }
+var CLOUDFLARE_KLEIN_MAX_REFERENCE_EDGE = 512;
+var CLOUDFLARE_KLEIN_REFERENCE_FIELD = "input_image_0";
+function buildKleinEditFormData(args) {
+  const formData = new FormData();
+  formData.append("prompt", args.prompt);
+  const ext = args.mimeType === "image/jpeg" ? "jpg" : "png";
+  const blob = new Blob([new Uint8Array(args.image)], { type: args.mimeType });
+  formData.append(CLOUDFLARE_KLEIN_REFERENCE_FIELD, blob, `reference_image.${ext}`);
+  formData.append("width", String(args.width));
+  formData.append("height", String(args.height));
+  return formData;
+}
 async function executeCloudflareEditImage(params) {
-  const { prompt, aspectRatio, mimeType } = params;
+  const { prompt, aspectRatio } = params;
   const { accountId, apiToken } = resolveCloudflareCredentials(params);
   if (!accountId || !apiToken) {
     throw new Error(
@@ -915,46 +546,133 @@ async function executeCloudflareEditImage(params) {
   if (inputBuffer.length > 20 * 1024 * 1024) {
     throw new Error("Reference image exceeds maximum allowed upload size of 20MB.");
   }
-  let verifiedMime = mimeType || "image/png";
+  let verifiedMime = "image/png";
+  let processedBuffer;
   try {
-    const metadata = await (0, import_sharp.default)(inputBuffer).metadata();
-    if (!metadata || !metadata.format) {
-      throw new Error("Corrupted metadata");
+    const imageInstance = (0, import_sharp.default)(inputBuffer);
+    const metadata = await imageInstance.metadata();
+    if (!metadata || !metadata.format || !metadata.width || !metadata.height) {
+      throw new Error("Corrupted or invalid image metadata.");
     }
-    if (metadata.format === "jpeg" || metadata.format === "jpg") {
-      verifiedMime = "image/jpeg";
-    } else if (metadata.format === "png") {
+    if (metadata.width < 16 || metadata.height < 16) {
+      throw new Error("Reference image dimensions are too small (minimum 16x16 pixels required).");
+    }
+    if (metadata.width > 4096 || metadata.height > 4096) {
+      throw new Error("Reference image dimensions exceed maximum allowed size of 4096x4096 pixels.");
+    }
+    const resized = imageInstance.resize(CLOUDFLARE_KLEIN_MAX_REFERENCE_EDGE, CLOUDFLARE_KLEIN_MAX_REFERENCE_EDGE, {
+      fit: "inside",
+      withoutEnlargement: true
+    });
+    if (metadata.hasAlpha || metadata.format === "png" || metadata.format === "webp" || metadata.format === "svg") {
+      processedBuffer = await resized.png().toBuffer();
       verifiedMime = "image/png";
-    } else if (metadata.format === "webp") {
-      verifiedMime = "image/webp";
-    } else if (metadata.format === "gif") {
-      verifiedMime = "image/gif";
+    } else if (metadata.format === "jpeg" || metadata.format === "jpg") {
+      processedBuffer = await resized.jpeg({ quality: 92 }).toBuffer();
+      verifiedMime = "image/jpeg";
+    } else {
+      processedBuffer = await resized.png().toBuffer();
+      verifiedMime = "image/png";
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`Unsupported or corrupted reference image format: ${msg}`);
   }
   const { width, height } = getDimensionsForAspectRatio(aspectRatio);
-  const formData = new FormData();
-  formData.append("prompt", finalPrompt);
-  const imageBlob = new Blob([new Uint8Array(inputBuffer)], { type: verifiedMime });
-  formData.append("image_1", imageBlob, "reference_image.png");
-  formData.append("width", String(width));
-  formData.append("height", String(height));
+  const formData = buildKleinEditFormData({
+    prompt: finalPrompt,
+    image: processedBuffer,
+    mimeType: verifiedMime,
+    width,
+    height
+  });
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`;
-  let response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiToken}`
-      },
-      body: formData
-    });
-  } catch (netErr) {
-    throw new Error(
-      `Failed to connect to Cloudflare Workers AI: ${netErr instanceof Error ? netErr.message : "Network error"}`
-    );
+  const maxAttempts = 3;
+  const overallDeadlineMs = 9e4;
+  const startTime = Date.now();
+  let attempt = 0;
+  let response = null;
+  let lastError = null;
+  while (attempt < maxAttempts) {
+    attempt++;
+    if (Date.now() - startTime > overallDeadlineMs) {
+      throw new Error("Cloudflare Workers AI request timed out (overall deadline exceeded).");
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45e3);
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`
+        },
+        body: formData,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      try {
+        const origMeta = await (0, import_sharp.default)(inputBuffer).metadata().catch(() => ({ width: 0, height: 0, format: "unknown" }));
+        const procMeta = await (0, import_sharp.default)(processedBuffer).metadata().catch(() => ({ width: 0, height: 0, format: "unknown" }));
+        const diagMeta = {
+          requestId: `cf_req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+          provider: "cloudflare",
+          modelUsed: "@cf/black-forest-labs/flux-2-klein-4b",
+          hasReference: true,
+          editEndpointSelected: true,
+          before: {
+            width: origMeta.width || 0,
+            height: origMeta.height || 0,
+            mimeType: origMeta.format || "unknown",
+            byteSize: inputBuffer.length
+          },
+          after: {
+            width: procMeta.width || 0,
+            height: procMeta.height || 0,
+            mimeType: verifiedMime,
+            byteSize: processedBuffer.length
+          },
+          imageInputIncluded: true,
+          httpStatus: response.status
+        };
+        console.log("[Cloudflare Diagnostics]", JSON.stringify(diagMeta));
+      } catch (logErr) {
+        console.warn("Failed to emit Cloudflare diagnostics log:", logErr);
+      }
+      if (response.ok || response.status === 400 || response.status === 401 || response.status === 403) {
+        break;
+      }
+      if (response.status === 429 || response.status >= 500 && response.status <= 599) {
+        if (attempt >= maxAttempts) break;
+        let retryAfterMs = 2e3 * Math.pow(2, attempt - 1) + Math.random() * 1e3;
+        const retryAfterHeader = response.headers.get("retry-after");
+        if (retryAfterHeader) {
+          const parsedSeconds = parseInt(retryAfterHeader, 10);
+          if (!isNaN(parsedSeconds)) {
+            retryAfterMs = Math.max(retryAfterMs, parsedSeconds * 1e3);
+          } else {
+            const parsedDate = Date.parse(retryAfterHeader);
+            if (!isNaN(parsedDate)) {
+              retryAfterMs = Math.max(retryAfterMs, parsedDate - Date.now());
+            }
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfterMs, 15e3)));
+        continue;
+      } else {
+        break;
+      }
+    } catch (netErr) {
+      clearTimeout(timeoutId);
+      lastError = netErr instanceof Error ? netErr : new Error("Network error");
+      if (attempt >= maxAttempts) {
+        throw new Error(`Failed to connect to Cloudflare Workers AI after ${maxAttempts} attempts: ${lastError.message}`);
+      }
+      const backoffMs = 1500 * Math.pow(2, attempt - 1) + Math.random() * 500;
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+  if (!response) {
+    throw new Error(`Failed to connect to Cloudflare Workers AI: ${lastError?.message || "No response received"}`);
   }
   if (response.status === 429) {
     throw new Error(
@@ -998,15 +716,16 @@ async function executeCloudflareEditImage(params) {
   if (!rawBuffer || rawBuffer.length === 0) {
     throw new Error("Cloudflare Workers AI returned an empty response buffer");
   }
-  let pngBuffer = rawBuffer;
+  let pngBuffer;
   try {
     const metadata = await (0, import_sharp.default)(rawBuffer).metadata();
-    if (metadata.format !== "png") {
-      pngBuffer = await (0, import_sharp.default)(rawBuffer).png().toBuffer();
+    if (!metadata || !metadata.format) {
+      throw new Error("Upstream response is not a valid image format.");
     }
-  } catch (formatErr) {
-    console.warn("Sharp failed to read image format, attempting direct PNG conversion:", formatErr);
     pngBuffer = await (0, import_sharp.default)(rawBuffer).png().toBuffer();
+  } catch (formatErr) {
+    const msg = formatErr instanceof Error ? formatErr.message : String(formatErr);
+    throw new Error(`Failed to decode image response from Cloudflare Workers AI: ${msg}`);
   }
   if (pngBuffer.length < 8 || pngBuffer[0] !== 137 || pngBuffer[1] !== 80 || pngBuffer[2] !== 78 || pngBuffer[3] !== 71 || pngBuffer[4] !== 13 || pngBuffer[5] !== 10 || pngBuffer[6] !== 26 || pngBuffer[7] !== 10) {
     throw new Error("Image buffer from Cloudflare does not contain valid PNG magic bytes");
@@ -1017,6 +736,74 @@ async function executeCloudflareEditImage(params) {
     provider: "cloudflare",
     modelUsed: "@cf/black-forest-labs/flux-2-klein-4b"
   };
+}
+var CLOUDFLARE_VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+function buildCloudflareVisionCall(accountId, apiToken) {
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${CLOUDFLARE_VISION_MODEL}`;
+  return async (parts) => {
+    const inline = parts.find((p) => p.inlineData)?.inlineData;
+    const text = parts.find((p) => typeof p.text === "string")?.text;
+    if (!inline || !text) {
+      throw new Error("Cloudflare vision call requires an image and an instruction.");
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6e4);
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: "You are a precise visual analyst. Describe only what is visible." },
+            { role: "user", content: text }
+          ],
+          image: inline.data.startsWith("data:") ? inline.data : `data:${inline.mimeType};base64,${inline.data}`,
+          max_tokens: 1024
+        }),
+        signal: controller.signal
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to connect to Cloudflare Workers AI vision: ${msg}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    if (response.status === 429) {
+      throw new Error("Cloudflare Workers AI free daily quota limit or rate limit reached (HTTP 429).");
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("Cloudflare Workers AI authentication failed (401/403). Please verify CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.");
+    }
+    const json = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = json?.errors?.[0]?.message || response.statusText || "Upstream request failed";
+      throw new Error(`Cloudflare Workers AI vision error (${response.status}): ${detail}`);
+    }
+    const out = json?.result?.response;
+    if (typeof out !== "string" || !out.trim()) {
+      throw new Error(
+        "Cloudflare vision model returned an empty response. The request format may not be accepted by this model, or the Meta license has not been agreed yet."
+      );
+    }
+    return out;
+  };
+}
+async function executeCloudflareAnalyzeVector(params, call) {
+  if (!params.base64Image || typeof params.base64Image !== "string") {
+    throw new Error("base64Image is required");
+  }
+  let vision = call;
+  if (!vision) {
+    const { accountId, apiToken } = resolveCloudflareCredentials(params);
+    if (!accountId || !apiToken) {
+      throw new Error(
+        "Cloudflare Workers AI credentials are not configured on the server. Please set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in server environment variables."
+      );
+    }
+    vision = buildCloudflareVisionCall(accountId, apiToken);
+  }
+  return executeAnalyzeVector({ base64Image: params.base64Image, mimeType: params.mimeType, apiKey: "" }, vision);
 }
 
 // server.ts
@@ -1151,6 +938,9 @@ function createApp() {
     maxRequests: 60,
     message: "Rate limit reached. Please wait a moment before sending more requests."
   });
+  app.get("/__aistudio_internal_control_plane/dev/status", (req, res) => {
+    res.json({ status: "ok", ready: true });
+  });
   app.get("/api/health", (req, res) => {
     res.json({
       status: "ok",
@@ -1161,7 +951,12 @@ function createApp() {
     });
   });
   app.post("/api/cloudflare/generate-image", apiLimiter, async (req, res) => {
-    const { prompt, aspectRatio } = req.body || {};
+    const { prompt, aspectRatio, base64Image } = req.body || {};
+    if (base64Image) {
+      return res.status(400).json({
+        error: "Reference image is not supported by Cloudflare FLUX.1 [schnell] text-to-image. Use /api/cloudflare/edit-image (FLUX.2 [klein]) for image-conditioned generation."
+      });
+    }
     try {
       const result = await executeCloudflareGenerateImage({ prompt, aspectRatio });
       return res.json(result);
@@ -1187,6 +982,27 @@ function createApp() {
       const message = err instanceof Error ? err.message : "Cloudflare image editing failed";
       let status = 500;
       if (message.includes("is required") || message.includes("exceeds the maximum allowed length") || message.includes("must be a non-empty string") || message.includes("could not be safely reduced") || message.includes("too long for Cloudflare") || message.includes("Unsupported") || message.includes("corrupted") || message.includes("exceeds maximum allowed upload size") || message.includes("Reference image is required")) {
+        status = 400;
+      } else if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) {
+        status = 429;
+      } else if (message.includes("401") || message.includes("403") || message.includes("authentication failed")) {
+        status = 401;
+      }
+      return res.status(status).json({ error: message });
+    }
+  });
+  app.post("/api/cloudflare/analyze-vector", apiLimiter, async (req, res) => {
+    const { base64Image, mimeType } = req.body || {};
+    try {
+      const result = await executeCloudflareAnalyzeVector({ base64Image, mimeType: mimeType || "image/png" });
+      return res.json(result);
+    } catch (err) {
+      if (err instanceof VectorAnalysisError) {
+        return res.status(422).json({ error: err.message, code: err.code, observedSubject: err.observedSubject });
+      }
+      const message = err instanceof Error ? err.message : "Cloudflare subject analysis failed";
+      let status = 500;
+      if (message.includes("is required")) {
         status = 400;
       } else if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) {
         status = 429;
@@ -1280,143 +1096,6 @@ function createApp() {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to prepare reference" });
     }
   });
-  app.post("/api/gemini/generate", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { model, prompt, base64Image, mimeType, aspectRatio } = req.body || {};
-    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-      return res.status(400).json({ error: "Prompt is required and must be a non-empty string" });
-    }
-    if (prompt.length > 1e4) {
-      return res.status(400).json({ error: "Prompt exceeds maximum allowed length of 10,000 characters" });
-    }
-    if (model && typeof model === "string" && !ALLOWED_IMAGE_MODELS.has(model)) {
-      return res.status(400).json({ error: `Model '${model}' is not in the allowed models list.` });
-    }
-    if (base64Image && (typeof base64Image !== "string" || base64Image.length > 35 * 1024 * 1024)) {
-      return res.status(400).json({ error: "base64Image payload exceeds maximum size limit" });
-    }
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please add your personal Gemini API key in Settings (\u2699)."
-      });
-    }
-    try {
-      const result = await executeGenerateImage({
-        model,
-        prompt: prompt.trim(),
-        base64Image,
-        mimeType,
-        aspectRatio,
-        apiKey: key,
-        isPersonal
-      });
-      return res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      return res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
-  app.post("/api/gemini/verify-key", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const result = await executeVerifyKey(key, isPersonal);
-    res.json(result);
-  });
-  app.post("/api/gemini/analyze", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { base64Image, mimeType, activeTab } = req.body || {};
-    if (!base64Image || typeof base64Image !== "string") {
-      return res.status(400).json({ error: "base64Image is required for analysis" });
-    }
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
-      });
-    }
-    try {
-      const result = await executeAnalyze({
-        base64Image,
-        mimeType: mimeType || "image/png",
-        activeTab: activeTab || "vectorize",
-        apiKey: key
-      });
-      res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
-  app.post("/api/gemini/analyze-vector", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { base64Image, mimeType } = req.body || {};
-    if (!base64Image || typeof base64Image !== "string") {
-      return res.status(400).json({ error: "base64Image is required" });
-    }
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
-      });
-    }
-    try {
-      const result = await executeAnalyzeVector({
-        base64Image,
-        mimeType: mimeType || "image/png",
-        apiKey: key
-      });
-      res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
-  app.post("/api/gemini/refine-typography", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { base64Image, mimeType, originalPrompt, targetText, targetPreset } = req.body || {};
-    if (!base64Image || typeof base64Image !== "string") {
-      return res.status(400).json({ error: "base64Image is required" });
-    }
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
-      });
-    }
-    try {
-      const result = await executeRefineTypography({
-        base64Image,
-        mimeType: mimeType || "image/png",
-        originalPrompt: originalPrompt || "",
-        targetText: targetText || "",
-        targetPreset: targetPreset || "",
-        apiKey: key
-      });
-      res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
-  app.post("/api/gemini/vision-analysis", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { base64Image, mimeType } = req.body || {};
-    if (!base64Image || typeof base64Image !== "string") {
-      return res.status(400).json({ error: "base64Image is required" });
-    }
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
-      });
-    }
-    try {
-      const result = await executeVisionAnalysis({
-        base64Image,
-        mimeType: mimeType || "image/png",
-        apiKey: key
-      });
-      res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
   app.get("/sw.js", (req, res) => {
     const swPath = import_path.default.join(process.cwd(), "public", "sw.js");
     if (import_fs.default.existsSync(swPath)) {
@@ -1433,7 +1112,7 @@ function createApp() {
 async function startServer() {
   ensurePremiumPwaAssets().catch((err) => console.warn("PWA asset check:", err));
   const app = createApp();
-  const PORT = 3e3;
+  const PORT = Number(process.env.PORT) || 3e3;
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -1462,11 +1141,10 @@ async function startServer() {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
-var isDirectExecution = Boolean(
-  process.env.NODE_ENV !== "test" && process.argv[1] && (process.argv[1].endsWith("server.ts") || process.argv[1].endsWith("server.cjs") || process.argv[1].endsWith("server.js"))
-);
-if (isDirectExecution) {
-  startServer();
+if (process.env.NODE_ENV !== "test") {
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+  });
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
