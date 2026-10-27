@@ -242,3 +242,79 @@ test("Gemini path: text-only Imagen fallback is NOT used when a reference image 
     globalThis.fetch = originalFetch;
   }
 });
+
+// ---- Optional Cloudflare vision analysis + analysis mode (mocked HTTP; NOT live) ----
+
+test("Analysis mode & default model: defaults to off and cf-flux", async () => {
+  const { useAppStore } = await import("../src/store/useAppStore");
+  assert.equal(useAppStore.getState().vectorAnalysisMode, "off");
+  assert.equal(useAppStore.getState().selectedModel, "cf-flux");
+});
+
+test("Cloudflare vision: sends documented tutorial shape (messages + image data URL) and parses result.response", async () => {
+  const { executeCloudflareAnalyzeVector, CLOUDFLARE_VISION_MODEL } = await import("../server/cloudflareBackend");
+  const img = await makeImage({ r: 180, g: 220, b: 255 });
+  const originalFetch = globalThis.fetch;
+  const bodies: { url: string; body: Record<string, unknown> }[] = [];
+  const replies = [GLASS_TEXT, '{"observedSubject":"glass of water","matches":true}'];
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    bodies.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    return new Response(JSON.stringify({ success: true, result: { response: replies.shift() } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+  try {
+    const out = await executeCloudflareAnalyzeVector({
+      base64Image: img,
+      mimeType: "image/png",
+      accountIdOverride: "acct",
+      apiTokenOverride: "tok"
+    });
+    assert.equal(out.subjectName, "glass of water");
+    assert.equal(out.imageSha256, sha256OfBase64Image(img));
+    for (const b of bodies) {
+      assert.ok(b.url.endsWith(`/accounts/acct/ai/run/${CLOUDFLARE_VISION_MODEL}`));
+      assert.equal(b.body.image, img);
+      assert.ok(Array.isArray(b.body.messages));
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Cloudflare vision: empty model output is an error, never an empty analysis", async () => {
+  const { executeCloudflareAnalyzeVector } = await import("../server/cloudflareBackend");
+  const img = await makeImage({ r: 9, g: 9, b: 9 });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ success: true, result: { response: null } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  try {
+    await assert.rejects(
+      () => executeCloudflareAnalyzeVector({ base64Image: img, mimeType: "image/png", accountIdOverride: "a", apiTokenOverride: "t" }),
+      /empty response/
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Cloudflare vision: missing credentials produce a clear error", async () => {
+  const { executeCloudflareAnalyzeVector } = await import("../server/cloudflareBackend");
+  const prevA = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const prevT = process.env.CLOUDFLARE_API_TOKEN;
+  delete process.env.CLOUDFLARE_ACCOUNT_ID;
+  delete process.env.CLOUDFLARE_API_TOKEN;
+  try {
+    await assert.rejects(
+      () => executeCloudflareAnalyzeVector({ base64Image: "AAAA", mimeType: "image/png" }),
+      /credentials are not configured/
+    );
+  } finally {
+    if (prevA !== undefined) process.env.CLOUDFLARE_ACCOUNT_ID = prevA;
+    if (prevT !== undefined) process.env.CLOUDFLARE_API_TOKEN = prevT;
+  }
+});

@@ -2,10 +2,10 @@ import { useRef, useCallback } from 'react';
 import { useAppStore, Tab } from '../store/useAppStore';
 import { getModule } from '../modules';
 import { GenerationContext } from '../types/generation';
-import { AspectRatio, Preset } from '../types/presets';
+import { AspectRatio } from '../types/presets';
 import { validateModelCall } from '../services/modelValidator';
 import { generateImage } from '../services/imageService';
-import { analyzeImage, analyzeVectorSubject } from '../services/geminiService';
+import { analyzeVectorSubject, analyzeVectorSubjectCloudflare } from '../services/geminiService';
 import { VectorAnalysisCache, fingerprintImage, groundVectorSubject } from '../services/vectorGrounding';
 import { incrementGeminiQuota, checkQuota } from '../services/quotaUtils';
 import { formatForGeminiAttention, parsePromptWeights } from '../utils/promptUtils';
@@ -21,6 +21,7 @@ export function useSynthesis() {
     uploadedMimeType,
     selectedPalette,
     selectedModel,
+    vectorAnalysisMode,
     selectedAspectRatio,
     selectedLogoType,
     selectedLogoLayout,
@@ -32,8 +33,6 @@ export function useSynthesis() {
     setResultImage,
     setError,
     setLastFinalPrompt,
-    isAnalyzing,
-    setIsAnalyzing,
     isSimplifiedMode,
     setIsSimplifiedMode,
     setPendingPromptLength,
@@ -45,8 +44,7 @@ export function useSynthesis() {
     addLog,
     addToHistory,
     getActiveGeminiKey,
-    showDebug,
-    resultImage
+    showDebug
   } = useAppStore();
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -80,7 +78,7 @@ export function useSynthesis() {
     retryCount = 0
   ) {
     if (isGeneratingRef.current) {
-      // Prevent accidental double-click cancellations (1.5s safety window)
+      // Prevent accidental double-click cancellations or rapid re-runs (1.5s safety window)
       if (Date.now() - lastGenerateStartTime.current < 1500) {
         addDebugLog('handleGenerate blocked by safety window');
         return;
@@ -90,6 +88,10 @@ export function useSynthesis() {
       return;
     }
 
+    // Immediately claim generation lock synchronously to prevent concurrent double-runs
+    isGeneratingRef.current = true;
+    lastGenerateStartTime.current = Date.now();
+
     const simplified = forceSimplified || isSimplifiedMode;
     if (simplified) {
       setIsSimplifiedMode(true);
@@ -97,9 +99,7 @@ export function useSynthesis() {
 
     playGenerateSound();
     setIsGenerating(true);
-    isGeneratingRef.current = true;
     setGenerationProgress(0);
-    lastGenerateStartTime.current = Date.now();
     setError(null);
     setResultImage(null);
     const startTime = Date.now();
@@ -163,11 +163,10 @@ export function useSynthesis() {
     const hasGenRef = Boolean(uploadedImage || selectedPreset?.referenceImagePath || selectedPreset?.sourceImagePath);
     const engineLabel = isCloudflareProvider
       ? (hasGenRef ? 'Cloudflare FLUX.2 [klein] 4B' : 'Cloudflare FLUX.1 [schnell]')
-      : 'Gemini Image';
+      : 'Google Gemini';
 
     addLog('Starting visual synthesis...', 'process');
     addLog('Compiling prompt and style DNA...', 'info');
-    setTimeout(() => addLog(`Synthesizing image with ${engineLabel} engine...`, 'info'), 1500);
 
     const currentModule = getModule(activeTab);
     const currentKey = getActiveGeminiKey();
@@ -176,15 +175,21 @@ export function useSynthesis() {
     // against it before generation. A rejected analysis stops the run; it is never used as if it were correct.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let vectorAnalysisData: any = null;
-    if (activeTab === 'vectorize' && uploadedImage) {
-      addLog('Analyzing reference image with Gemini 3.8 Flash...', 'process');
+    if (activeTab === 'vectorize' && uploadedImage && vectorAnalysisMode === 'off') {
+      addLog('Subject analysis is off. Using the reference image only.', 'info');
+    }
+    if (activeTab === 'vectorize' && uploadedImage && vectorAnalysisMode !== 'off') {
+      addLog(vectorAnalysisMode === 'cloudflare' ? 'Analyzing reference image with Cloudflare Llama 3.2 Vision...' : 'Analyzing reference image with Gemini 3.8 Flash...', 'process');
       let grounding;
       try {
         grounding = await groundVectorSubject({
           imageDataUrl: uploadedImage,
           mimeType: uploadedMimeType || 'image/png',
           cache: vectorAnalysisCacheRef.current,
-          analyze: (img, mime) => analyzeVectorSubject(img, mime, currentKey, controller.signal)
+          analyze: (img, mime) =>
+            vectorAnalysisMode === 'cloudflare'
+              ? analyzeVectorSubjectCloudflare(img, mime, controller.signal)
+              : analyzeVectorSubject(img, mime, currentKey, controller.signal)
         });
       } catch (groundErr) {
         clearInterval(progressInterval);
@@ -344,11 +349,12 @@ export function useSynthesis() {
       if (uploadedImage) setGenerationCount(prev => prev + 1);
       
       const endTime = Date.now();
+      const metricModel = res?.modelUsed || (isCloudflareProvider ? 'Cloudflare FLUX' : 'Google Gemini');
       setMetrics(prev => [...prev, { 
         timestamp: endTime, 
         latency: endTime - startTime, 
         success: true, 
-        model: 'gemini' 
+        model: metricModel 
       }]);
 
       addLog('[PROCESS END] Synthesis complete.', 'success');
@@ -461,7 +467,7 @@ export function useSynthesis() {
         timestamp: endTime, 
         latency: endTime - startTime, 
         success: false, 
-        model: 'gemini' 
+        model: isCloudflareProvider ? 'Cloudflare FLUX' : 'Google Gemini' 
       }]);
 
       setError(errorMsg);
@@ -487,6 +493,7 @@ export function useSynthesis() {
       setIsSimplifiedMode(false);
     }
   }, [
+    vectorAnalysisMode,
     isGeneratingRef,
     isSimplifiedMode,
     setIsSimplifiedMode,
@@ -520,126 +527,9 @@ export function useSynthesis() {
     showDebug
   ]);
 
-  const handleRefine = useCallback(async () => {
-    if (!resultImage || Array.isArray(resultImage) || !selectedPreset) {
-      addLog('No single result image to refine.', 'error');
-      return;
-    }
-
-    addLog('[VORTEX] Initializing Iterative Refinement Loop...', 'process');
-    setIsGenerating(true);
-    isGeneratingRef.current = true;
-    
-    try {
-      const currentModule = getModule(activeTab);
-      const generationContext: GenerationContext = {
-        prompt: userInput || 'Custom Lettering',
-        preset: { ...selectedPreset, aspectRatio: selectedAspectRatio as AspectRatio },
-        selectedPalette,
-        selectedModel: selectedModel,
-        activeTab: activeTab
-      };
-      
-      const originalPrompt = currentModule.constructPrompt(generationContext);
-      
-      addLog('[VORTEX] Auditing current output for specs...', 'info');
-      
-      const { refineTypographyPrompt } = await import('../services/geminiService');
-      const refinedPrompt = await refineTypographyPrompt(
-        resultImage,
-        'image/png',
-        originalPrompt,
-        userInput || (selectedPreset as { presetDetails?: { textExample?: string } }).presetDetails?.textExample || 'TEXT',
-        selectedPreset.name,
-        getActiveGeminiKey()
-      );
-
-      addLog('[VORTEX] Refinement parameters injected. Re-synthesizing...', 'success');
-      
-      // Clear generation state so handleGenerate can run
-      setIsGenerating(false);
-      isGeneratingRef.current = false;
-      
-      // Small timeout to allow state to settle
-      setTimeout(() => {
-        handleGenerate(refinedPrompt);
-      }, 300);
-      
-    } catch (err) {
-       addLog('Refinement failed: ' + (err instanceof Error ? err.message : String(err)), 'error');
-       setIsGenerating(false);
-       isGeneratingRef.current = false;
-    }
-  }, [
-    resultImage,
-    selectedPreset,
-    activeTab,
-    userInput,
-    selectedAspectRatio,
-    selectedPalette,
-    selectedModel,
-    getActiveGeminiKey,
-    addLog,
-    handleGenerate,
-    setIsGenerating,
-    isGeneratingRef
-  ]);
-
-  const handleAnalyze = useCallback(async (retryCount = 0) => {
-    if (!uploadedImage || !uploadedMimeType) {
-      addLog('Please upload a photo before analyzing.', 'error');
-      return;
-    }
-    
-    // Check quota for Gemini standard engine
-    if (selectedModel === 'gemini') {
-      try {
-        checkQuota();
-      } catch (e: unknown) {
-        addLog(`Analysis Quota reached: ${e instanceof Error ? e.message : String(e)}`, 'error');
-        addLog('FALLBACK: Using smart heuristic analyzer...', 'info');
-      }
-    }
-
-    setIsAnalyzing(true);
-    setError(null);
-    if (retryCount === 0) addLog('Initiating Visual DNA Extraction...', 'process');
-    try {
-      const result = await analyzeImage(
-        uploadedImage, 
-        uploadedMimeType, 
-        activeTab, 
-        getActiveGeminiKey(), 
-        abortControllerRef.current?.signal || undefined
-      );
-      
-      const newPreset: Preset = {
-        name: result.name || 'Analyzed Style',
-        basePrompt: result.basePrompt || 'high quality vector art, clean lines',
-        aspectRatio: result.aspectRatio || '1:1',
-        ...result
-      };
-      
-      const { setSelectedPreset: storeSetSelectedPreset } = useAppStore.getState();
-      storeSetSelectedPreset(newPreset);
-      addLog(`Style identified: ${newPreset.name}`, 'success');
-      
-      incrementGeminiQuota();
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setError(errorMessage || 'Analysis failed');
-      addLog(`Analysis failed: ${errorMessage}.`, 'error');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }, [uploadedImage, uploadedMimeType, selectedModel, activeTab, getActiveGeminiKey, addLog, setIsAnalyzing, setError]);
-
   return {
     handleGenerate,
     handleStop,
-    handleRefine,
-    handleAnalyze,
-    isGenerating,
-    isAnalyzing
+    isGenerating
   };
 }

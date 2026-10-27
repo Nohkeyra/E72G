@@ -91,10 +91,7 @@ export default function App() {
   // Call Domain Hooks
   const {
     handleGenerate,
-    handleRefine,
-    handleAnalyze,
     isGenerating,
-    isAnalyzing
   } = useSynthesis();
 
   const {
@@ -276,7 +273,6 @@ export default function App() {
                         isGenerating={isGenerating} resultImage={resultImage} uploadedImage={uploadedImage} selectedModel={selectedModel} modelOptions={[]}
                         isHoldingCompare={isHoldingCompare} setIsHoldingCompare={setIsHoldingCompare}
                         generationProgress={generationProgress}
-                        onRefine={handleRefine}
                         onDownload={handleDownload}
                         onUndo={handleUndo} 
                         onClear={() => handleClear('canvas')}
@@ -317,7 +313,7 @@ export default function App() {
                         <>
                   <SynthesisControls 
                     userInput={userInput} setUserInput={setUserInput}
-                    isGenerating={isGenerating} isAnalyzing={isAnalyzing} onGenerate={handleGenerate} onAnalyze={handleAnalyze} 
+                    isGenerating={isGenerating} onGenerate={handleGenerate} 
                     activeTab={activeTab}
                     uploadedImage={uploadedImage} selectedPreset={selectedPreset}
                     selectedLogoType={selectedLogoType} setSelectedLogoType={setSelectedLogoType}

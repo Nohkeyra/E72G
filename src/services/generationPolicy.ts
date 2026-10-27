@@ -27,29 +27,10 @@ function getPreferredFallbackOrder(
   activeTab: string,
   hasBaseImage: boolean
 ): ImageModel[] {
-  const tab = activeTab.toLowerCase();
-
-  if (hasBaseImage) {
-    if (tab.includes('vector')) {
-      return [
-        'gemini',
-      ].filter(isModelKnown);
-    }
-
-    return [
-      'gemini',
-    ].filter(isModelKnown);
+  if (hasBaseImage || activeTab.toLowerCase().includes('vector')) {
+    return (['cf-flux', 'gemini'] as ImageModel[]).filter(isModelKnown);
   }
-
-  if (tab.includes('logo') || tab.includes('vector')) {
-    return [
-      'gemini',
-    ].filter(isModelKnown);
-  }
-
-  return [
-    'gemini',
-  ].filter(isModelKnown);
+  return (['cf-flux', 'gemini'] as ImageModel[]).filter(isModelKnown);
 }
 
 export function selectModelByPolicy(
@@ -104,12 +85,17 @@ export function selectModelByPolicy(
     };
   }
 
+  if (isModelKnown('cf-flux')) {
+    return {
+      model: 'cf-flux',
+      reason: 'Defaulting to Cloudflare FLUX as preferred primary engine.'
+    };
+  }
+
   if (isModelKnown('gemini')) {
     return {
       model: 'gemini',
-      reason: hasBaseImage
-        ? 'No fully compatible models found for uploaded-image flow. Defaulting to gemini as safest fallback.'
-        : 'No compatible models found. Defaulting to gemini.'
+      reason: 'No Cloudflare model registered. Defaulting to Google Gemini.'
     };
   }
 

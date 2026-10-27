@@ -11,9 +11,7 @@ interface SynthesisControlsProps {
   userInput: string;
   setUserInput: (val: string) => void;
   isGenerating: boolean;
-  isAnalyzing: boolean;
   onGenerate: () => void;
-  onAnalyze?: () => void;
   activeTab: string;
   uploadedImage: string | null;
   selectedPreset: Preset | null;
@@ -35,9 +33,7 @@ export const SynthesisControls: React.FC<SynthesisControlsProps> = React.memo(({
   userInput,
   setUserInput,
   isGenerating,
-  isAnalyzing,
   onGenerate,
-  onAnalyze,
   activeTab,
   uploadedImage,
   selectedPreset,
@@ -53,7 +49,19 @@ export const SynthesisControls: React.FC<SynthesisControlsProps> = React.memo(({
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const attentionMenuRef = React.useRef<HTMLDivElement>(null);
   const [showAttentionMenu, setShowAttentionMenu] = React.useState(false);
-    const availableRatios = React.useMemo(() => {
+
+  React.useEffect(() => {
+    if (!showAttentionMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (attentionMenuRef.current && !attentionMenuRef.current.contains(e.target as Node)) {
+        setShowAttentionMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showAttentionMenu]);
+
+  const availableRatios = React.useMemo(() => {
     if (selectedPreset?.altAspectRatios) {
       const ratios = [selectedPreset.aspectRatio, ...selectedPreset.altAspectRatios];
       return Array.from(new Set(ratios));
@@ -258,25 +266,12 @@ export const SynthesisControls: React.FC<SynthesisControlsProps> = React.memo(({
 
       {/* Bottom: Action Bar */}
       <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-2">
-        {uploadedImage && (activeTab === 'vectorize' || activeTab === 'logo design') && onAnalyze && (
-          <motion.button
-            whileHover={{ scale: 1.02, transition: MOTION_PROFILE.TACTILE }}
-            whileTap={{ scale: 0.98, transition: MOTION_PROFILE.TACTILE }}
-            onClick={() => handleButtonClick(onAnalyze)}
-            disabled={isAnalyzing}
-            className="flex-1 bg-bg-secondary text-text-primary py-4 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-bg-primary border border-border-primary shadow-sm transition-all"
-          >
-            <Sparkles size={14} className="text-accent" />
-            <span>Extract Style</span>
-          </motion.button>
-        )}
-
         <motion.button
             whileHover={{ scale: 1.02, transition: MOTION_PROFILE.TACTILE }}
             whileTap={{ scale: 0.98, transition: MOTION_PROFILE.TACTILE }}
             onClick={() => handleButtonClick(onGenerate)}
             disabled={false}
-            className={`flex-[2] py-4 rounded-xl text-sm font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden group ${
+            className={`w-full py-4 rounded-xl text-sm font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden group ${
               isGenerating 
                 ? 'bg-red-500 text-white hover:bg-red-600' 
                 : 'bg-accent text-bg-primary hover:bg-accent/90'

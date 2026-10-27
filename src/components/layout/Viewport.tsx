@@ -32,7 +32,6 @@ interface ViewportProps {
   onColorPaletteClick: () => void;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   generationProgress: number;
-  onRefine?: () => void;
 }
 
 export const Viewport: React.FC<ViewportProps> = memo(({
@@ -51,7 +50,6 @@ export const Viewport: React.FC<ViewportProps> = memo(({
   onColorPaletteClick,
   onFileUpload,
   generationProgress,
-  onRefine,
 }) => {
   const { imageBrightness } = useAppStore();
   const isImageBright = imageBrightness > 0.6;
@@ -209,20 +207,6 @@ export const Viewport: React.FC<ViewportProps> = memo(({
                 >
                   <Undo2 className="w-4 h-4 md:w-[18px] md:h-[18px]" strokeWidth={2} />
                 </motion.button>
-                {onRefine && (
-                  <motion.button 
-                    whileHover={{ scale: 1.1, transition: MOTION_PROFILE.TACTILE }}
-                    whileTap={{ scale: 0.95, transition: MOTION_PROFILE.TACTILE }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRefine();
-                    }}
-                    className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center transition-all group relative bg-accent/20 text-accent rounded-full border border-accent/30 backdrop-blur-md hover:bg-accent/35"
-                    title="Audit & Refine (Iterative Loop)"
-                  >
-                    <Zap className="w-4 h-4 md:w-[18px] md:h-[18px]" strokeWidth={2} />
-                  </motion.button>
-                )}
               </>
             )}
             <motion.button 

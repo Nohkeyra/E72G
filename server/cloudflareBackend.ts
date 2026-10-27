@@ -1,4 +1,6 @@
 import sharp from "sharp";
+import { executeAnalyzeVector } from "./geminiBackend";
+import type { VectorAnalysisResult, VectorVisionCall } from "./geminiBackend";
 
 export interface CloudflareGenerateParams {
   prompt: string;
@@ -562,3 +564,91 @@ export async function executeCloudflareEditImage(
   };
 }
 
+
+/** Workers AI vision model used for optional subject analysis (free-plan eligible per Cloudflare pricing docs). */
+export const CLOUDFLARE_VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+
+/**
+ * Vision call adapter. Request shape follows Cloudflare's official Llama 3.2 Vision tutorial:
+ * { messages, image: "data:<mime>;base64,..." }. Cloudflare's docs/community disagree on other shapes, so
+ * this is UNVERIFIED against a live account; an empty or non-text reply throws instead of returning "".
+ * Note: first use of this model needs a one-time Meta license agreement (a request with prompt "agree").
+ */
+export function buildCloudflareVisionCall(accountId: string, apiToken: string): VectorVisionCall {
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${CLOUDFLARE_VISION_MODEL}`;
+  return async (parts) => {
+    const inline = (parts.find((p) => (p as { inlineData?: unknown }).inlineData) as
+      | { inlineData: { data: string; mimeType: string } }
+      | undefined)?.inlineData;
+    const text = (parts.find((p) => typeof (p as { text?: unknown }).text === "string") as { text: string } | undefined)?.text;
+    if (!inline || !text) {
+      throw new Error("Cloudflare vision call requires an image and an instruction.");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: "You are a precise visual analyst. Describe only what is visible." },
+            { role: "user", content: text }
+          ],
+          image: `data:${inline.mimeType};base64,${inline.data}`,
+          max_tokens: 1024
+        }),
+        signal: controller.signal
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to connect to Cloudflare Workers AI vision: ${msg}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (response.status === 429) {
+      throw new Error("Cloudflare Workers AI free daily quota limit or rate limit reached (HTTP 429).");
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("Cloudflare Workers AI authentication failed (401/403). Please verify CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.");
+    }
+    const json = (await response.json().catch(() => null)) as {
+      result?: { response?: unknown };
+      errors?: { message?: string }[];
+    } | null;
+    if (!response.ok) {
+      const detail = json?.errors?.[0]?.message || response.statusText || "Upstream request failed";
+      throw new Error(`Cloudflare Workers AI vision error (${response.status}): ${detail}`);
+    }
+    const out = json?.result?.response;
+    if (typeof out !== "string" || !out.trim()) {
+      throw new Error(
+        "Cloudflare vision model returned an empty response. The request format may not be accepted by this model, or the Meta license has not been agreed yet."
+      );
+    }
+    return out;
+  };
+}
+
+export async function executeCloudflareAnalyzeVector(
+  params: { base64Image: string; mimeType: string; accountIdOverride?: string; apiTokenOverride?: string },
+  call?: VectorVisionCall
+): Promise<VectorAnalysisResult & { imageSha256: string }> {
+  if (!params.base64Image || typeof params.base64Image !== "string") {
+    throw new Error("base64Image is required");
+  }
+  let vision = call;
+  if (!vision) {
+    const { accountId, apiToken } = resolveCloudflareCredentials(params);
+    if (!accountId || !apiToken) {
+      throw new Error(
+        "Cloudflare Workers AI credentials are not configured on the server. Please set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in server environment variables."
+      );
+    }
+    vision = buildCloudflareVisionCall(accountId, apiToken);
+  }
+  return executeAnalyzeVector({ base64Image: params.base64Image, mimeType: params.mimeType, apiKey: "" }, vision);
+}

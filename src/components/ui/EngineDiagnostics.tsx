@@ -174,7 +174,7 @@ export const EngineDiagnostics: React.FC<EngineDiagnosticsProps> = ({
                         <Cpu size={12} /> Active Engine
                       </div>
                       <div className="text-lg font-bold font-display text-text-primary truncate" title={selectedModel}>
-                        {selectedModel}
+                        {selectedModel === 'gemini' ? 'Google Gemini' : 'Cloudflare FLUX'}
                       </div>
                       <div className="flex items-center gap-2 text-[10px] text-text-secondary font-mono uppercase">
                         <div className={`w-1.5 h-1.5 rounded-full ${isGenerating ? 'bg-accent animate-pulse shadow-[0_0_8px_currentColor]' : 'bg-green-500'}`} />

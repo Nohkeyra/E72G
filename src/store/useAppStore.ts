@@ -17,6 +17,8 @@ export interface AppState {
   uploadedImage: string | null;
   uploadedMimeType: string | null;
   selectedModel: ImageModel;
+  vectorAnalysisMode: 'off' | 'cloudflare';
+  setVectorAnalysisMode: (mode: 'off' | 'cloudflare') => void;
   selectedAspectRatio: string;
   selectedLogoType: string;
   selectedLogoLayout: string;
@@ -138,7 +140,12 @@ export const useAppStore = create<AppStore>((set, get) => {
     selectedPreset: null,
     uploadedImage: null,
     uploadedMimeType: null,
-    selectedModel: (safeLocalStorage.getItem('selectedModel') as ImageModel) || 'gemini',
+    selectedModel: ((['cf-flux', 'gemini'].includes(safeLocalStorage.getItem('selectedModel') || '') ? safeLocalStorage.getItem('selectedModel') : 'cf-flux') as ImageModel),
+    vectorAnalysisMode: (safeLocalStorage.getItem('vectorAnalysisMode') === 'cloudflare' ? 'cloudflare' : 'off') as 'off' | 'cloudflare',
+    setVectorAnalysisMode: (vectorAnalysisMode) => {
+      safeLocalStorage.setItem('vectorAnalysisMode', vectorAnalysisMode);
+      set({ vectorAnalysisMode });
+    },
     selectedAspectRatio: '1:1',
     selectedLogoType: '',
     selectedLogoLayout: '',

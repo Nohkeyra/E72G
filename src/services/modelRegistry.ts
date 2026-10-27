@@ -1,12 +1,10 @@
 export type ProviderType = 'cloudflare' | 'google_gemini';
 
-export type ImageModel = 'gemini' | 'gemini-flash' | 'gemini-image' | 'cf-flux';
+export type ImageModel = 'cf-flux' | 'gemini';
 
 export type BillingStatus = 
   | 'Free / no billing' 
-  | 'Free tier with quota' 
-  | 'Requires billing' 
-  | 'Unknown, blocked';
+  | 'Free tier with quota';
 
 export interface ModelInfo {
   id: ImageModel;
@@ -23,7 +21,7 @@ export interface ModelInfo {
 export const modelRegistry: Record<ImageModel, ModelInfo> = {
   'cf-flux': {
     id: 'cf-flux',
-    label: 'Cloudflare FLUX (Free)',
+    label: 'Cloudflare FLUX',
     provider: 'cloudflare',
     modelId: '@cf/black-forest-labs/flux-1-schnell',
     requiresApiKey: false,
@@ -33,33 +31,13 @@ export const modelRegistry: Record<ImageModel, ModelInfo> = {
   },
   gemini: {
     id: 'gemini',
-    label: 'Gemini 3.1 Flash Lite Image (Billing Required)',
+    label: 'Google Gemini',
     provider: 'google_gemini',
     modelId: 'gemini-3.1-flash-lite-image',
     requiresApiKey: false,
     supportsReferenceImages: true,
     previewCompatible: true,
-    billingStatus: 'Requires billing'
-  },
-  'gemini-flash': {
-    id: 'gemini-flash',
-    label: 'Gemini 3.1 Flash Image',
-    provider: 'google_gemini',
-    modelId: 'gemini-3.1-flash-lite-image',
-    requiresApiKey: false,
-    supportsReferenceImages: true,
-    previewCompatible: true,
-    billingStatus: 'Requires billing'
-  },
-  'gemini-image': {
-    id: 'gemini-image',
-    label: 'Gemini 3.1 Flash Image (High Quality)',
-    provider: 'google_gemini',
-    modelId: 'gemini-3.1-flash-lite-image',
-    requiresApiKey: false,
-    supportsReferenceImages: true,
-    previewCompatible: true,
-    billingStatus: 'Requires billing'
+    billingStatus: 'Free tier with quota'
   },
 };
 
@@ -67,8 +45,9 @@ export function resolveModelRoute(modelId: string): ModelInfo {
   if (modelId === 'cf-flux' || modelId === 'cloudflare' || modelId === 'flux') {
     return modelRegistry['cf-flux'];
   }
-  if (modelId === 'imagen') {
+  if (modelId === 'gemini' || modelId === 'gemini-flash' || modelId === 'gemini-image' || modelId === 'imagen') {
     return modelRegistry['gemini'];
   }
   return modelRegistry[modelId as ImageModel] || modelRegistry['cf-flux'];
 }
+

@@ -1,27 +1,42 @@
+const isStorageAvailable = (): boolean => {
+  try {
+    return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined' && window.localStorage !== null;
+  } catch {
+    return false;
+  }
+};
+
 export const safeLocalStorage = {
   setItem: (key: string, value: string) => {
+    if (!isStorageAvailable()) return;
     try {
-      localStorage.setItem(key, value);
+      window.localStorage.setItem(key, value);
     } catch (e) {
       if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
         console.warn(`LocalStorage quota exceeded for key: ${key}, clearing...`);
-        localStorage.removeItem(key);
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          // Ignore secondary cleanup error
+        }
       } else {
         console.error('Error saving to localStorage', e);
       }
     }
   },
-  getItem: (key: string) => {
+  getItem: (key: string): string | null => {
+    if (!isStorageAvailable()) return null;
     try {
-      return localStorage.getItem(key);
+      return window.localStorage.getItem(key);
     } catch (e) {
       console.error('Error reading from localStorage', e);
       return null;
     }
   },
   removeItem: (key: string) => {
+    if (!isStorageAvailable()) return;
     try {
-      localStorage.removeItem(key);
+      window.localStorage.removeItem(key);
     } catch (e) {
       console.error('Error removing from localStorage', e);
     }

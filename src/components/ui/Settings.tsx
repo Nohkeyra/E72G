@@ -8,6 +8,7 @@ import { PerformanceMetric } from '../../types/performance';
 import { ImageModel } from '../../services/modelRegistry';
 import { checkGeminiConnection } from '../../services/geminiService';
 import { MOTION_PROFILE } from '../../lib/motion';
+import { useAppStore } from '../../store/useAppStore';
 
 interface SettingsProps {
   onClose: () => void;
@@ -42,9 +43,12 @@ export const Settings: React.FC<SettingsProps> = ({
   setShowDevConsole,
   logs,
   metrics,
+  selectedModel,
   isGenerating,
   clearLogs
 }) => {
+  const vectorAnalysisMode = useAppStore((st) => st.vectorAnalysisMode);
+  const setVectorAnalysisMode = useAppStore((st) => st.setVectorAnalysisMode);
   const [publicBackendUrl, setPublicBackendUrl] = useState(() => safeLocalStorage.getItem('publicBackendUrl') || '');
 
   const [activeTab, setActiveTab] = useState<'system' | 'keys' | 'diagnostics'>('system');
@@ -144,6 +148,25 @@ export const Settings: React.FC<SettingsProps> = ({
             animate={{ opacity: 1, x: 0 }}
             className="space-y-8"
           >
+            {/* Vectorize subject analysis source */}
+            <div className="space-y-3 bg-bg-secondary/40 p-6 rounded-2xl border border-border-primary">
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-text-secondary font-mono">Vectorize_Subject_Analysis</h3>
+              <div className="flex gap-2">
+                {(['off', 'cloudflare'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => { playClickSound(); setVectorAnalysisMode(mode); }}
+                    className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${vectorAnalysisMode === mode ? 'bg-accent text-bg-primary' : 'bg-bg-secondary text-text-secondary border border-border-primary'}`}
+                  >
+                    {mode === 'off' ? 'Off (Default)' : 'Cloudflare (Vision)'}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-text-secondary font-mono">
+                Off: uses the reference image directly (zero extra API calls). Cloudflare: Llama 3.2 Vision on Workers AI.
+              </p>
+            </div>
+
             {/* Diagnostics Panel */}
             <div className="space-y-4 bg-bg-secondary/40 p-6 rounded-2xl border border-border-primary relative overflow-hidden group shadow-sm hover:shadow-md transition-shadow backdrop-blur-sm">
               <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-blue-500/40 rounded-tl-lg" />
@@ -445,7 +468,7 @@ export const Settings: React.FC<SettingsProps> = ({
             <EngineDiagnostics 
               logs={logs}
               metrics={metrics}
-              selectedModel={'gemini'}
+              selectedModel={selectedModel || 'cf-flux'}
               isGenerating={isGenerating}
               addLog={addLog}
               clearLogs={clearLogs}

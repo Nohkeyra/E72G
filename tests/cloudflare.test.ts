@@ -284,6 +284,18 @@ test("Model Registry: Cloudflare FLUX model registered with zero-cost tier and s
   assert.equal(resolveModelRoute("cf-flux").id, "cf-flux");
   assert.equal(resolveModelRoute("cloudflare").id, "cf-flux");
   assert.equal(resolveModelRoute("flux").id, "cf-flux");
+  assert.equal(resolveModelRoute("").id, "cf-flux");
+
+  // Verify billed models removed from registry
+  assert.equal((modelRegistry as Record<string, unknown>)["gemini-flash"], undefined);
+  assert.equal((modelRegistry as Record<string, unknown>)["gemini-image"], undefined);
+
+  // Verify gemini label is clean and free of "Billing Required"
+  const geminiEntry = modelRegistry["gemini"];
+  assert.ok(geminiEntry);
+  assert.equal(geminiEntry.label, "Google Gemini");
+  assert.equal(geminiEntry.label.includes("Billing Required"), false);
+  assert.notEqual(geminiEntry.billingStatus, "Requires billing");
 });
 
 test("Image Service: Preset with previewImagePath ONLY uses text-to-image (FLUX.1 schnell) without reference bytes", async () => {

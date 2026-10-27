@@ -4,21 +4,11 @@ import fs from "fs";
 import sharp from "sharp";
 import { fetchSafeImage } from "./server/ssrfValidator";
 import { createRateLimiter } from "./server/rateLimiter";
-import {
-  resolveApiKey,
-  executeGenerateImage,
-  executeVerifyKey,
-  executeAnalyze,
-  executeAnalyzeVector,
-  VectorAnalysisError,
-  executeRefineTypography,
-  executeVisionAnalysis,
-  handleGeminiError,
-  ALLOWED_IMAGE_MODELS
-} from "./server/geminiBackend";
+import { VectorAnalysisError } from "./server/geminiBackend";
 import {
   executeCloudflareGenerateImage,
-  executeCloudflareEditImage
+  executeCloudflareEditImage,
+  executeCloudflareAnalyzeVector
 } from "./server/cloudflareBackend";
 
 async function ensurePremiumPwaAssets() {
@@ -251,6 +241,29 @@ export function createApp() {
     }
   });
 
+  // Optional subject analysis on Cloudflare Workers AI (Llama 3.2 Vision) - alternative to Gemini analysis
+  app.post("/api/cloudflare/analyze-vector", apiLimiter, async (req, res) => {
+    const { base64Image, mimeType } = req.body || {};
+    try {
+      const result = await executeCloudflareAnalyzeVector({ base64Image, mimeType: mimeType || "image/png" });
+      return res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof VectorAnalysisError) {
+        return res.status(422).json({ error: err.message, code: err.code, observedSubject: err.observedSubject });
+      }
+      const message = err instanceof Error ? err.message : "Cloudflare subject analysis failed";
+      let status = 500;
+      if (message.includes("is required")) {
+        status = 400;
+      } else if (message.includes("429") || message.includes("quota") || message.includes("rate limit")) {
+        status = 429;
+      } else if (message.includes("401") || message.includes("403") || message.includes("authentication failed")) {
+        status = 401;
+      }
+      return res.status(status).json({ error: message });
+    }
+  });
+
   // 2. Prepare reference with strict SSRF protection and path traversal protection
   app.post("/api/prepare-reference", apiLimiter, async (req, res) => {
     try {
@@ -357,179 +370,7 @@ export function createApp() {
     }
   });
 
-  // 3. Centralized Gemini Image Generation
-  app.post("/api/gemini/generate", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { model, prompt, base64Image, mimeType, aspectRatio } = req.body || {};
-
-    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-      return res.status(400).json({ error: "Prompt is required and must be a non-empty string" });
-    }
-
-    if (prompt.length > 10000) {
-      return res.status(400).json({ error: "Prompt exceeds maximum allowed length of 10,000 characters" });
-    }
-
-    if (model && typeof model === "string" && !ALLOWED_IMAGE_MODELS.has(model)) {
-      return res.status(400).json({ error: `Model '${model}' is not in the allowed models list.` });
-    }
-
-    if (base64Image && (typeof base64Image !== "string" || base64Image.length > 35 * 1024 * 1024)) {
-      return res.status(400).json({ error: "base64Image payload exceeds maximum size limit" });
-    }
-
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please add your personal Gemini API key in Settings (⚙)."
-      });
-    }
-
-    try {
-      const result = await executeGenerateImage({
-        model,
-        prompt: prompt.trim(),
-        base64Image,
-        mimeType,
-        aspectRatio,
-        apiKey: key,
-        isPersonal
-      });
-
-      return res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      return res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
-
-  // 4. API Key Verification / Diagnostics
-  app.post("/api/gemini/verify-key", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const result = await executeVerifyKey(key, isPersonal);
-    res.json(result);
-  });
-
-  // 5. Image Style DNA Analysis
-  app.post("/api/gemini/analyze", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { base64Image, mimeType, activeTab } = req.body || {};
-
-    if (!base64Image || typeof base64Image !== "string") {
-      return res.status(400).json({ error: "base64Image is required for analysis" });
-    }
-
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
-      });
-    }
-
-    try {
-      const result = await executeAnalyze({
-        base64Image,
-        mimeType: mimeType || "image/png",
-        activeTab: activeTab || "vectorize",
-        apiKey: key
-      });
-      res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
-
-  // 6. Vector Subject Breakdown
-  app.post("/api/gemini/analyze-vector", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { base64Image, mimeType } = req.body || {};
-
-    if (!base64Image || typeof base64Image !== "string") {
-      return res.status(400).json({ error: "base64Image is required" });
-    }
-
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
-      });
-    }
-
-    try {
-      const result = await executeAnalyzeVector({
-        base64Image,
-        mimeType: mimeType || "image/png",
-        apiKey: key
-      });
-      res.json(result);
-    } catch (err) {
-      if (err instanceof VectorAnalysisError) {
-        return res.status(422).json({
-          error: err.message,
-          code: err.code,
-          observedSubject: err.observedSubject
-        });
-      }
-      const sanitized = handleGeminiError(err, isPersonal);
-      res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
-
-  app.post("/api/gemini/refine-typography", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { base64Image, mimeType, originalPrompt, targetText, targetPreset } = req.body || {};
-
-    if (!base64Image || typeof base64Image !== "string") {
-      return res.status(400).json({ error: "base64Image is required" });
-    }
-
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
-      });
-    }
-
-    try {
-      const result = await executeRefineTypography({
-        base64Image,
-        mimeType: mimeType || "image/png",
-        originalPrompt: originalPrompt || "",
-        targetText: targetText || "",
-        targetPreset: targetPreset || "",
-        apiKey: key
-      });
-      res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
-
-  // 8. Vision Object Detection
-  app.post("/api/gemini/vision-analysis", apiLimiter, async (req, res) => {
-    const { key, isPersonal } = resolveApiKey(req);
-    const { base64Image, mimeType } = req.body || {};
-
-    if (!base64Image || typeof base64Image !== "string") {
-      return res.status(400).json({ error: "base64Image is required" });
-    }
-
-    if (!key) {
-      return res.status(503).json({
-        error: "Gemini API key is not configured on the server. Please provide a personal key in Settings."
-      });
-    }
-
-    try {
-      const result = await executeVisionAnalysis({
-        base64Image,
-        mimeType: mimeType || "image/png",
-        apiKey: key
-      });
-      res.json(result);
-    } catch (err) {
-      const sanitized = handleGeminiError(err, isPersonal);
-      res.status(sanitized.status).json({ error: sanitized.message });
-    }
-  });
+  // Gemini routes removed.
 
   // Explicit service worker endpoint with proper headers
   app.get("/sw.js", (req, res) => {
@@ -550,7 +391,7 @@ export function createApp() {
 async function startServer() {
   ensurePremiumPwaAssets().catch((err) => console.warn("PWA asset check:", err));
   const app = createApp();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
@@ -582,14 +423,9 @@ async function startServer() {
   });
 }
 
-const isDirectExecution = Boolean(
-  process.env.NODE_ENV !== "test" &&
-  process.argv[1] &&
-  (process.argv[1].endsWith("server.ts") ||
-   process.argv[1].endsWith("server.cjs") ||
-   process.argv[1].endsWith("server.js"))
-);
-
-if (isDirectExecution) {
-  startServer();
+if (process.env.NODE_ENV !== "test") {
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+  });
 }
+

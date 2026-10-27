@@ -27,10 +27,10 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ hasReference
           className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold ${
             isCloudflare
               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+              : 'bg-accent/10 text-accent border border-accent/20'
           }`}
         >
-          {isCloudflare ? 'Cloudflare FLUX (Free)' : 'Gemini (Requires Billing)'}
+          {isCloudflare ? 'Cloudflare FLUX (Default)' : 'Google Gemini'}
         </span>
       </div>
 
@@ -57,7 +57,7 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ hasReference
               : 'bg-bg-primary border-border-primary text-text-secondary hover:border-text-secondary/40'
           }`}
         >
-          <span>Gemini Image</span>
+          <span>Google Gemini</span>
         </button>
       </div>
 
@@ -66,8 +66,8 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({ hasReference
           <Sparkles size={14} className="shrink-0 mt-0.5" />
           <p>
             {hasReferenceImage
-              ? 'Using Cloudflare FLUX.2 [klein] 4B (Free) for reference image-to-image editing.'
-              : 'Using Cloudflare FLUX.1 [schnell] (Free) for text-to-image generation.'}
+              ? 'Using Cloudflare FLUX.2 [klein] 4B for reference image-to-image editing.'
+              : 'Using Cloudflare FLUX.1 [schnell] for text-to-image generation.'}
           </p>
         </div>
       )}
